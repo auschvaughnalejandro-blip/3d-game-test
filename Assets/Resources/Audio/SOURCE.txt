@@ -1,0 +1,9 @@
+Audio in this folder comes from Kenney (kenney.nl), from the RPG Audio,
+Impact Sounds and UI Audio packs.
+
+Licence: CC0 1.0 Universal (public domain). No attribution is required and
+the clips may be used commercially, so nothing here restricts shipping.
+
+Files have been renamed from their originals to say what they are used for
+rather than what they were recorded from. Clips ending _0, _1, _2 are
+alternatives for the same event, chosen at random so repeats do not grate.
