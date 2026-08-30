@@ -52,6 +52,35 @@ public class GameDirector : MonoBehaviour
             {
                 playerSurge = playerObject.AddComponent<PlayerSurge>();
             }
+
+            // Same reasoning for the thing that drives the player's limbs.
+            if (playerObject.GetComponent<PlayerAnimator>() == null)
+            {
+                playerObject.AddComponent<PlayerAnimator>();
+            }
+
+            // The component can be added here. The MODEL cannot.
+            //
+            // A player serialised into the scene before the segmented mesh existed is
+            // still wearing the old single lump of geometry, which was built in a T-pose
+            // and has no separate limbs to move. Nothing at runtime can fix that - the
+            // valley has to be rebuilt so the player is assembled again from the models
+            // that exist now.
+            //
+            // This says so out loud, because the failure is completely silent otherwise:
+            // the enemies animate perfectly (they are spawned fresh every round, so they
+            // are built by the current code) while the player stands in a T-pose, and
+            // that looks like the player animation being broken rather than like a stale
+            // scene.
+            if (playerObject.GetComponentInChildren<ProceduralAnimator>(true) == null)
+            {
+                Debug.LogWarning("The player in this scene has no segmented model, so it "
+                    + "cannot be animated and will stand in a T-pose. This player was "
+                    + "saved into the scene before the segmented mesh existed. Rebuild "
+                    + "with One Valley > Rebuild Valley (Ctrl+Shift+R). Enemies are "
+                    + "spawned fresh each round so they are unaffected, which is why "
+                    + "they animate and the player does not.");
+            }
         }
 
     }

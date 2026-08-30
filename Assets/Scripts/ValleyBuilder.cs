@@ -599,10 +599,19 @@ public static class ValleyBuilder
         Transform playerHand = FindTheWeaponHand(playerModel);
         if (playerHand != null)
         {
-            PutTheWeaponInTheHand(sword, playerHand, player.transform, 90f);
-            PutTheWeaponInTheHand(hammer, playerHand, player.transform, 90f);
-            PutTheWeaponInTheHand(bow, playerHand, player.transform, 0f);
-            PutTheWeaponInTheHand(edge, playerHand, player.transform, 90f);
+            // Carried forward and down at rest. Straight down would drag a one-metre
+            // blade along the floor from a hand that is only a metre off it, and would
+            // bury it in the leg besides.
+            PutTheWeaponInTheHand(sword, playerHand, 135f);
+            PutTheWeaponInTheHand(hammer, playerHand, 135f);
+
+            // The bow stands upright. Its mesh is centred on the grip rather than ending
+            // at it, so pointing it up puts the grip in the hand and a limb either side.
+            PutTheWeaponInTheHand(bow, playerHand, 0f);
+
+            // The Edge is 1.78 m - three quarters longer than the sword - so it is
+            // carried further out in front, or the point would be through the floor.
+            PutTheWeaponInTheHand(edge, playerHand, 115f);
         }
 
         CharacterStats stats = player.AddComponent<CharacterStats>();
@@ -1507,7 +1516,7 @@ public static class ValleyBuilder
 
         if (gruntFist != null && club != null)
         {
-            PutTheWeaponInTheHand(club, gruntFist, grunt.transform, 78f);
+            PutTheWeaponInTheHand(club, gruntFist, 135f);
             gruntBrain.weaponPivot = null;
         }
         else
@@ -2344,23 +2353,35 @@ public static class ValleyBuilder
     // rotated a separate empty pivot to fake a swing. Now that the arms actually move,
     // the weapon has to be part of the arm or the two will always disagree.
     //
-    // The placement is done in WORLD terms and left to Unity to convert. The hand sits at
-    // the end of a chain - hips, torso, shoulders, upper arm, forearm - and the hips
-    // carry the -90 degree stand-up rotation, so working out the local rotation that
-    // happens to point a blade forwards means composing that whole chain by hand and
-    // getting it right. Setting the world rotation says what is actually wanted: the
-    // model's own +Y runs along the direction the character faces.
+    // Where the blade points, measured from straight up:
+    //
+    //     0   = straight up
+    //     90  = straight forward, horizontal
+    //     135 = forward and down, which is how a blade is carried at rest
+    //     180 = straight down
+    //
+    // These are MEASURED, not derived. Deriving them from the hierarchy was attempted
+    // twice and came out wrong twice - once pointing the sword out sideways like a lance,
+    // and once burying it in the character's own leg - because a fist's axes are not the
+    // character's. The hand's own Y runs along the character's FORWARD and its Z runs
+    // straight DOWN, so the blade direction works out to (0, cos, sin) in world terms
+    // with Y up and Z the way the character faces. That is what the numbers above encode.
+    //
+    // A weapon in a hand does not point where the character points; it points where the
+    // arm points, and the arm swings. So this is all expressed in the hand's own space,
+    // and the animation carries the weapon for free.
     private static void PutTheWeaponInTheHand(GameObject weapon, Transform hand,
-        Transform character, float tipDegrees)
+        float degreesFromStraightUp)
     {
-        if (weapon == null || hand == null || character == null)
+        if (weapon == null || hand == null)
         {
             return;
         }
 
-        weapon.transform.SetParent(hand, true);
-        weapon.transform.position = hand.position;
-        weapon.transform.rotation = character.rotation * Quaternion.Euler(tipDegrees, 0f, 0f);
+        weapon.transform.SetParent(hand, false);
+        weapon.transform.localPosition = Vector3.zero;
+        weapon.transform.localRotation =
+            Quaternion.Euler(-90f + degreesFromStraightUp, 0f, 0f);
     }
 
 
