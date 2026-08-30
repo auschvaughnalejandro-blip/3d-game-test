@@ -30,9 +30,12 @@ public class SelfTest : MonoBehaviour
 
     private const float GiveUpAfterSeconds = 300f;
 
-    private static string ReportFolder =
-        "C:/Users/HP/AppData/Local/Temp/claude/c--Users-HP-Desktop-RPG-Game/" +
-        "85dc9e8a-2ebd-409f-bc75-faa3c9f9f98e/scratchpad/";
+    // Application.dataPath is <project>/Assets, so the report lands in <project>/Logs,
+    // which is gitignored. This used to be an absolute path on the laptop the project was
+    // first written on. On any other machine that folder does not exist, so the log and
+    // the done-marker were written into nowhere and the harness waited for a file that
+    // was never coming - a silent failure that looks like the self test hanging.
+    private static string ReportFolder = Application.dataPath + "/../Logs/";
 
     private StringBuilder report = new StringBuilder();
     private float startedAt = 0f;

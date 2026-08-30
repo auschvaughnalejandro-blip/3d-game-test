@@ -13,7 +13,17 @@ Nothing here is exported. It is purely for looking at.
     python Tools/blender_send.py Tools/show_everything.py
 """
 
-exec(open(r"C:/Users/Mark Alejandro/OneValley/OneValley-Transfer/unity-project/Tools/ov_kit.py").read())
+import os
+
+# blender_send.py defines ONEVALLEY_ROOT before it ships this file over the socket. When
+# Blender runs the file directly (--background --python) nothing is injected, so fall back
+# to this file's own location. Either way no machine-specific path is baked in.
+if "ONEVALLEY_ROOT" in globals():
+    PROJECT_ROOT = ONEVALLEY_ROOT
+else:
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+exec(open(os.path.join(PROJECT_ROOT, "Tools", "ov_kit.py")).read())
 
 clear_scene()
 

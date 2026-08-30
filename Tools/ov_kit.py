@@ -298,7 +298,14 @@ def triangle_count(obj):
 # Output
 # ----------------------------------------------------------------------------------
 
-PROJECT_ROOT = r"c:/Users/Mark Alejandro/OneValley/OneValley-Transfer/unity-project"
+# PROJECT_ROOT is normally already resolved by the script that exec'd this file. Resolve
+# it here as well, so ov_kit.py still works when it is run on its own, and so no
+# machine-specific path is baked into the repo.
+if "PROJECT_ROOT" not in globals():
+    if "ONEVALLEY_ROOT" in globals():
+        PROJECT_ROOT = ONEVALLEY_ROOT
+    else:
+        PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_DIR = PROJECT_ROOT + "/Assets/Resources/Models"
 PREVIEW_DIR = PROJECT_ROOT + "/Docs/previews"
 

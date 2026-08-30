@@ -9,6 +9,7 @@ Sending a file rather than an inline string keeps us out of shell-quoting troubl
 """
 
 import json
+import os
 import socket
 import sys
 
@@ -50,6 +51,15 @@ def main():
 
     with open(script_path, "r", encoding="utf-8") as handle:
         code = handle.read()
+
+    # The addon exec's this text with no __file__ of its own, so the script has no way to
+    # work out where the project lives. Tell it. This is what keeps the build scripts free
+    # of hardcoded machine paths - they read ONEVALLEY_ROOT instead.
+    # json.dumps writes a correctly quoted and escaped string literal, which saves us
+    # hand-escaping a Windows path into generated source.
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    preamble = "ONEVALLEY_ROOT = " + json.dumps(project_root.replace("\\", "/")) + "\n"
+    code = preamble + code
 
     reply = send({"type": "execute_code", "params": {"code": code}}, timeout_seconds)
 

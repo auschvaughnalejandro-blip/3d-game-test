@@ -10,9 +10,10 @@ using System.IO;
 // clear out the previous report, and press play.
 public static class RunSelfTest
 {
-    private const string ReportFolder =
-        "C:/Users/HP/AppData/Local/Temp/claude/c--Users-HP-Desktop-RPG-Game/" +
-        "85dc9e8a-2ebd-409f-bc75-faa3c9f9f98e/scratchpad/";
+    // Must match SelfTest.ReportFolder. Not a const, because Application.dataPath is only
+    // known at runtime - the old absolute path was a const on a machine that no longer
+    // runs this project.
+    private static readonly string ReportFolder = Application.dataPath + "/../Logs/";
 
     [MenuItem("One Valley/Run Self Test")]
     public static void Run()

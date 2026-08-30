@@ -180,3 +180,24 @@ text pointer stubs and Unity imports garbage. The `unityyamlmerge` driver path i
 `.git/config` is absolute and does **not** sync — re-register it per machine. Pull before
 you start and push before you stop; `.unity` scene files merge badly even with the YAML
 tool.
+
+**Git / LFS**
+
+- `.gitattributes` used to mark every binary type `lockable`. That attribute makes
+  git-lfs check those files out **read-only**, and the failure is remote: Blender's FBX
+  export dies with `PermissionError: [Errno 13]` on a path that plainly exists, and it
+  reads as a Blender or permissions problem rather than a git one. Locking is for teams
+  stopping two artists editing one binary; here the "artists" are `Tools/build_*.py`
+  writing their own outputs, so it only ever blocked the pipeline. Removed 30 Aug 2026.
+  If a clone still misbehaves, `python Tools/setup_new_machine.py` clears the stale bit.
+- **FBX exports embed a timestamp**, so rebuilding art always produces different bytes
+  even when the geometry is byte-for-byte the same shape. Do not read that diff as a
+  change, and do not commit a rebuild that was only meant as a test.
+- `Tools/*.py` must never hardcode a project path. `blender_send.py` injects
+  `ONEVALLEY_ROOT` before shipping a script over the socket, and a direct
+  `blender --background --python` run resolves the root from `__file__`. Both paths are
+  covered by the header block every build script starts with.
+- **The build scripts do not need the addon.** They are plain `bpy`, so
+  `blender --background --python Tools/build_weapons.py` works with no window and no
+  socket. Only the *MCP addon's* server needs a real window — that constraint does not
+  extend to the geometry scripts, and conflating the two costs a lot of time.
