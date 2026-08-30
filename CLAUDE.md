@@ -136,3 +136,47 @@ Takes about a minute and catches real errors.
   `https://api.polyhaven.com/files/<id>` with **curl** — urllib gets HTTP 403, and curl
   needs a real `-A` user agent plus POSIX-style `-o` paths (Windows `C:/...` paths
   silently write nothing).
+
+## Working from another device
+
+**The design decision, and why the obvious approach fails.** Both toolchains are
+local-only by construction. Blender's addon binds `host='localhost'`
+(`blender_mcp.py:329`, bound at `:419`), so port 9876 is loopback. Unity's bridge is a
+**Windows named pipe** (`\.\pipe\unity-mcp-<id>-<pid>`), and a named pipe cannot be
+port-forwarded at all — there is no port to forward. So "tunnel each protocol" cannot
+work: it half-solves Blender and does nothing for Unity.
+
+Instead, run Claude **on this machine** and reach the session:
+
+    claude --remote-control onevalley
+
+The session is already sitting next to Blender, Unity and the repo, so nothing needs
+tunnelling. Another device drives it from claude.ai/code. This also means **no port is
+ever exposed** — which matters, because the Blender socket has **no authentication of
+any kind**: anything that can reach 9876 can run arbitrary Python via `execute_code`
+(see `Tools/blender_send.py` for the whole protocol). Never bind it to `0.0.0.0` and
+never port-forward 9876 on the router; that is unauthenticated RCE.
+
+**Before you walk away from the machine**, run:
+
+    python Tools/remote_preflight.py
+
+It checks the three things that are invisible from the far end and prints GO or NO-GO.
+Each check exists because its failure is silent:
+
+- **Blender** — the addon refuses to start its socket under `blender --background`, so
+  Blender must be running **with its real window**. `blendermcp_auto_start_server`
+  defaults to True, so launching Blender is enough; there is nothing to click.
+- **Unity** — a descriptor in `~/.unity/mcp/connections/` **outlives the editor that
+  wrote it**. A stale file from a closed editor looks exactly like a live bridge, so the
+  check confirms the PID is still alive and that `project_path` is actually this project.
+- **Repo** — anything uncommitted is simply not there from the other device.
+
+**The machine must stay awake and logged in.** There is no headless mode for either
+tool. Sleep ends the session.
+
+**Git hygiene across machines.** `git lfs install` is per-machine, or LFS files clone as
+text pointer stubs and Unity imports garbage. The `unityyamlmerge` driver path in
+`.git/config` is absolute and does **not** sync — re-register it per machine. Pull before
+you start and push before you stop; `.unity` scene files merge badly even with the YAML
+tool.
