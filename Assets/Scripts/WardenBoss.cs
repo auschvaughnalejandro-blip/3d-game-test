@@ -79,6 +79,52 @@ public class WardenBoss : MonoBehaviour
     // A beat of stillness at every phase change, so the player can see the rules changed.
     private float phaseFlourishLeft = 0f;
 
+    [Header("Boss tells")]
+    // How long the Warden spends hauling both arms overhead before the rocks leave.
+    //
+    // This is a NEW gameplay timing, not just an animation length, and that is
+    // deliberate. A volley used to fire on the same frame it was decided on, with no
+    // tell at all - the player simply started taking damage from across the arena. The
+    // wind-up is what turns it into something that can be answered by getting behind
+    // cover, which is the whole point of phase two.
+    //
+    // Because the volley now fires when this expires, the animation and the attack run
+    // off one clock and cannot drift apart.
+    public float volleyWindUpSeconds = 0.7f;
+
+    // How long the arms stay flung wide after a summon. Nothing in the game waits on
+    // this - the creatures have already arrived - so it is a pose length rather than a
+    // gameplay timing.
+    public float summonPoseSeconds = 1.0f;
+
+    private float volleyWindUpLeft = 0f;
+    private float volleyReleaseLeft = 0f;
+    private float summonPoseLeft = 0f;
+
+    // The limb animator on the Warden's model, when it has a segmented one. Found on
+    // demand for the same reason EnemyBrain does it: this component is added by
+    // ValleyBuilder before the body is hung on the brain, so anything looked up in Awake
+    // would be null.
+    private ProceduralAnimator limbs;
+    private bool haveLookedForTheLimbs = false;
+
+    private ProceduralAnimator TheLimbs()
+    {
+        if (haveLookedForTheLimbs == true)
+        {
+            return limbs;
+        }
+
+        if (brain == null || brain.bodyTransform == null)
+        {
+            return null;
+        }
+
+        limbs = brain.bodyTransform.GetComponent<ProceduralAnimator>();
+        haveLookedForTheLimbs = true;
+        return limbs;
+    }
+
     void Start()
     {
         brain = GetComponent<EnemyBrain>();
@@ -121,11 +167,19 @@ public class WardenBoss : MonoBehaviour
         }
 
         TickCooldowns();
+        KeepTheBossPosesRunning();
 
         // A charge overrides everything else while it is running.
         if (isCharging == true || chargeWindUpLeft > 0f)
         {
             ContinueCharging();
+            return;
+        }
+
+        // A volley being loaded holds the Warden still, exactly as the charge does.
+        if (volleyWindUpLeft > 0f || volleyReleaseLeft > 0f)
+        {
+            ContinueTheVolley();
             return;
         }
 
@@ -195,6 +249,34 @@ public class WardenBoss : MonoBehaviour
         shockwaveCooldown = shockwaveCooldown - Time.deltaTime;
     }
 
+    // The two poses that are held on a timer of their own rather than driven frame by
+    // frame from a move that is still running.
+    private void KeepTheBossPosesRunning()
+    {
+        ProceduralAnimator animator = TheLimbs();
+        if (animator == null)
+        {
+            return;
+        }
+
+        if (summonPoseLeft > 0f)
+        {
+            summonPoseLeft = summonPoseLeft - Time.deltaTime;
+            animator.ShowSummoning(1f);
+        }
+        else
+        {
+            animator.ShowSummoning(0f);
+        }
+
+        // The charge pose is switched off here rather than in ContinueCharging, because
+        // ContinueCharging stops being called the moment the charge ends.
+        if (isCharging == false && chargeWindUpLeft <= 0f)
+        {
+            animator.ShowCharging(0f);
+        }
+    }
+
     private void DecideWhatToUse()
     {
         float distance = Vector3.Distance(transform.position, thePlayer.position);
@@ -209,7 +291,7 @@ public class WardenBoss : MonoBehaviour
 
         if (phase >= 2 && volleyCooldown <= 0f && distance > 6f)
         {
-            ThrowAVolley();
+            BeginTheVolley();
             volleyCooldown = secondsBetweenVolleys;
             return;
         }
@@ -217,6 +299,7 @@ public class WardenBoss : MonoBehaviour
         if (phase >= 3 && summonCooldown <= 0f)
         {
             SummonHelp();
+            summonPoseLeft = summonPoseSeconds;
             summonCooldown = secondsBetweenSummons;
             return;
         }
@@ -265,6 +348,16 @@ public class WardenBoss : MonoBehaviour
                 brain.bodyTransform.localRotation = Quaternion.Euler(18f * through, 0f, 0f);
             }
 
+            // The root rotation above is the whole Warden tipping. This is the body
+            // inside it setting itself: pitched forward, shoulders rolling, and the
+            // stride slowed right down so a creature about to move at fifteen metres a
+            // second does not windmill its legs.
+            ProceduralAnimator windingUp = TheLimbs();
+            if (windingUp != null)
+            {
+                windingUp.ShowCharging(1f - (chargeWindUpLeft / chargeWindUpSeconds));
+            }
+
             if (chargeWindUpLeft <= 0f)
             {
                 isCharging = true;
@@ -290,6 +383,12 @@ public class WardenBoss : MonoBehaviour
         if (brain != null && brain.bodyTransform != null)
         {
             brain.bodyTransform.localRotation = Quaternion.Euler(-22f, 0f, 0f);
+        }
+
+        ProceduralAnimator running = TheLimbs();
+        if (running != null)
+        {
+            running.ShowCharging(1f);
         }
 
         // Anything solid in the way gets broken. This is what strips the arena of cover
@@ -338,6 +437,73 @@ public class WardenBoss : MonoBehaviour
     // ------------------------------------------------------------------------
     // The volley
     // ------------------------------------------------------------------------
+
+    // Both arms overhead over a long wind-up, then a two-handed hurl. Longer than the
+    // Grunt's tell on purpose - a boss telegraphs harder, because being hit by something
+    // the player never saw coming reads as unfair rather than as difficult.
+    private void BeginTheVolley()
+    {
+        volleyWindUpLeft = volleyWindUpSeconds;
+        volleyReleaseLeft = 0f;
+
+        // Aim on the spot rather than tracking through the wind-up, so stepping behind a
+        // pillar during the tell actually works.
+        Vector3 toPlayer = thePlayer.position - transform.position;
+        toPlayer.y = 0f;
+        if (toPlayer.sqrMagnitude > 0.01f)
+        {
+            transform.rotation = Quaternion.LookRotation(toPlayer.normalized);
+        }
+
+        ProceduralAnimator animator = TheLimbs();
+        if (animator != null)
+        {
+            animator.UseBothArmsForTheNextAttack(true);
+        }
+    }
+
+    private void ContinueTheVolley()
+    {
+        ProceduralAnimator animator = TheLimbs();
+
+        if (volleyWindUpLeft > 0f)
+        {
+            volleyWindUpLeft = volleyWindUpLeft - Time.deltaTime;
+
+            if (animator != null && volleyWindUpSeconds > 0f)
+            {
+                animator.ShowWindUp(1f - (volleyWindUpLeft / volleyWindUpSeconds));
+            }
+
+            if (volleyWindUpLeft <= 0f)
+            {
+                // The rocks leave at the top of the hurl, not at the start of it.
+                ThrowAVolley();
+
+                // The release is short and fixed: it is the arms coming down, and the
+                // rocks are already gone, so nothing waits on it.
+                volleyReleaseLeft = 0.25f;
+            }
+            return;
+        }
+
+        volleyReleaseLeft = volleyReleaseLeft - Time.deltaTime;
+
+        if (animator != null)
+        {
+            animator.ShowStrike(1f - Mathf.Clamp01(volleyReleaseLeft / 0.25f));
+        }
+
+        if (volleyReleaseLeft <= 0f)
+        {
+            volleyReleaseLeft = 0f;
+            if (animator != null)
+            {
+                animator.ClearAttack();
+                animator.UseBothArmsForTheNextAttack(false);
+            }
+        }
+    }
 
     private void ThrowAVolley()
     {
@@ -438,6 +604,16 @@ public class WardenBoss : MonoBehaviour
     private void BeginShockwave()
     {
         GameSound.PlayAt("WardenSlam", transform.position, 1f);
+
+        // Driven on impact rather than on the wind-up. The hips dropping as the ring
+        // leaves is what makes the shockwave look like it came OUT of the Warden instead
+        // of merely appearing near it.
+        ProceduralAnimator animator = TheLimbs();
+        if (animator != null)
+        {
+            animator.ShowSlamImpact();
+        }
+
         shockwaveRunning = true;
         shockwaveRadius = 0f;
         shockwaveHasHitPlayer = false;

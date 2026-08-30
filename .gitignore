@@ -28,6 +28,9 @@
 *.opendb
 *.VC.db
 
+# ── Claude Code local settings (personal, not shared) ──────────
+.claude/settings.local.json
+
 # ── OS noise ──────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
@@ -39,3 +42,10 @@ Thumbs.db
 *.app
 crashlytics-build.properties
 sysinfo.txt
+
+# ── Editor backup files (Unity imports .meta.bak as junk assets) ─
+*.bak
+*.bak.meta
+
+# ── Loose ChatGPT image exports (strays, not project assets) ────
+ChatGPT Image *.png

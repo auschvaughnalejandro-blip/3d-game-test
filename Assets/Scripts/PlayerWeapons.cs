@@ -240,6 +240,7 @@ public class PlayerWeapons : MonoBehaviour
         GameSound.Play("WeaponSwap", 0.55f);
 
         announceSecondsRemaining = 1.2f;
+        swapsMade = swapsMade + 1;
         ShowOnlyTheWeaponInHand();
     }
 
@@ -284,6 +285,16 @@ public class PlayerWeapons : MonoBehaviour
             return wardensEdge;
         }
         return sword;
+    }
+
+    // Counted so PlayerAnimator can notice a swap the frame it happens. JustSwapped()
+    // cannot be used for this: it stays true for over a second so the HUD can announce
+    // the new weapon, which is far longer than the hands take to do the swapping.
+    private int swapsMade = 0;
+
+    public int SwapsMade()
+    {
+        return swapsMade;
     }
 
     public bool JustSwapped()

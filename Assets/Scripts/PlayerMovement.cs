@@ -66,6 +66,30 @@ public class PlayerMovement : MonoBehaviour
         return isAirborne;
     }
 
+    // How far through the roll we are, from 0 at the start to 1 at the end, or -1 when
+    // there is no roll happening.
+    //
+    // Read by PlayerAnimator so the dodge animation runs on the same clock as the dodge
+    // itself. Deriving it here rather than timing it again in the animator is what stops
+    // the two drifting apart - an animation that outlasts its own invulnerability window
+    // is the game lying to the player about when they were safe.
+    public float DodgeProgress()
+    {
+        if (dodgeSecondsRemaining <= 0f || dodgeLastsSeconds <= 0f)
+        {
+            return -1f;
+        }
+
+        return 1f - (dodgeSecondsRemaining / dodgeLastsSeconds);
+    }
+
+    // Which way the roll is going, in world space. The animator needs it to decide which
+    // side to throw the body over.
+    public Vector3 DodgeDirection()
+    {
+        return dodgeDirection;
+    }
+
     // The jump itself, separated from the key that asks for it. Returns false when
     // refused, which is either mid-air or mid-roll.
     public bool TryToJump()

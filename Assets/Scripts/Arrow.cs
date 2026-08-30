@@ -32,30 +32,70 @@ public class Arrow : MonoBehaviour
 
     private const float HitRadius = 0.45f;
 
+    // How long the drawn arrow is, nose to nock. Matches Arrow.fbx, and the primitive
+    // fallback is built to the same length so the two are interchangeable.
+    private const float ShaftLengthMetres = 0.75f;
+
+    // The modelled arrow where there is one, and the old cylinder where there is not.
+    //
+    // Kept as a fallback rather than assumed, because a missing model would otherwise
+    // fire an invisible arrow - and an archer whose shots cannot be seen reads as a
+    // broken bow rather than as a missing file.
+    private static GameObject MakeTheShaft()
+    {
+        GameObject modelled = Resources.Load<GameObject>("Models/Arrow");
+
+        if (modelled != null)
+        {
+            return Object.Instantiate(modelled);
+        }
+
+        GameObject shaft = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        // The primitive stands along its own Y and is two units tall, so half the
+        // wanted length is the right scale.
+        shaft.transform.localScale =
+            new Vector3(0.05f, ShaftLengthMetres * 0.5f, 0.05f);
+        return shaft;
+    }
+
     public static Arrow Fire(Vector3 from, Vector3 direction, float speed, float damageDealt)
     {
         GameObject arrowObject = new GameObject("Arrow");
         arrowObject.transform.position = from;
 
-        // A long thin shaft, built the way everything else in this project is built.
-        GameObject shaft = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        GameObject shaft = MakeTheShaft();
         shaft.transform.SetParent(arrowObject.transform);
-        shaft.transform.localPosition = Vector3.zero;
-        // The primitive stands along its own Y and is two units tall, so this lays it
-        // down the arrow's forward axis at 0.8 m long.
+
+        // The arrow is modelled standing along its own +Y with the nock on the origin,
+        // so ninety degrees about X lays it down the arrow's forward axis. It is then
+        // pushed back by half its length, because this object's position is where the
+        // arrow IS for the purpose of hitting things - leaving the nock there would put
+        // the whole visible shaft out in front of its own hit point.
         shaft.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-        shaft.transform.localScale = new Vector3(0.05f, 0.4f, 0.05f);
+        shaft.transform.localPosition = new Vector3(0f, 0f, -ShaftLengthMetres * 0.5f);
 
-        // Unity gives a cylinder a CAPSULE collider, which would shove the player and
-        // every enemy around as it flew past. The arrow does its own hit detection.
-        Object.Destroy(shaft.GetComponent<Collider>());
+        // Colliders of any kind would shove the player and every enemy around as the
+        // arrow flew past. It does its own hit detection.
+        Collider[] strays = shaft.GetComponentsInChildren<Collider>();
+        int strayIndex = 0;
+        while (strayIndex < strays.Length)
+        {
+            Object.Destroy(strays[strayIndex]);
+            strayIndex = strayIndex + 1;
+        }
 
-        Renderer shaftRenderer = shaft.GetComponent<Renderer>();
         Material arrowMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"));
         arrowMaterial.SetColor("_BaseColor", new Color(0.86f, 0.78f, 0.55f));
         arrowMaterial.EnableKeyword("_EMISSION");
         arrowMaterial.SetColor("_EmissionColor", new Color(0.5f, 0.42f, 0.2f) * 1.4f);
-        shaftRenderer.material = arrowMaterial;
+
+        Renderer[] surfaces = shaft.GetComponentsInChildren<Renderer>();
+        int surfaceIndex = 0;
+        while (surfaceIndex < surfaces.Length)
+        {
+            surfaces[surfaceIndex].material = arrowMaterial;
+            surfaceIndex = surfaceIndex + 1;
+        }
 
         Arrow arrow = arrowObject.AddComponent<Arrow>();
         arrow.velocity = direction.normalized * speed;

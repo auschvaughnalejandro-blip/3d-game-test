@@ -521,57 +521,89 @@ public static class ValleyBuilder
         controller.stepOffset = 0.4f;
         TuneControllerAgainstBeingSquashedThroughTheFloor(controller);
 
-        AttachModel(player, "Player", clothMaterial, PlayerHeight * 0.5f, 1.0f);
+        GameObject playerModel = AttachModel(player, "Player", clothMaterial,
+            PlayerHeight * 0.5f, 1.0f);
 
-        // THREE weapons, all parented to the player. PlayerWeapons shows one and hides
+        // Which arm the animator swings has to be the arm the weapons are in. Both read
+        // WeaponIsInTheArmNamedLeft, so they cannot drift apart.
+        if (playerModel != null)
+        {
+            ProceduralAnimator playerLimbs = playerModel.GetComponent<ProceduralAnimator>();
+            if (playerLimbs != null)
+            {
+                playerLimbs.weaponIsInTheArmNamedLeft = WeaponIsInTheArmNamedLeft;
+            }
+        }
+
+        // FOUR weapons, all parented to the player. PlayerWeapons shows one and hides
         // the rest; the names matter, because it finds them by the prefixes "Sword",
-        // "Hammer" and "Bow".
-        AddPart(player, "SwordBlade", PrimitiveType.Cube,
-            new Vector3(0.58f, 0.02f, 0.34f), new Vector3(0.07f, 0.07f, 1.00f), bladeMaterial);
-        AddPart(player, "SwordGuard", PrimitiveType.Cube,
-            new Vector3(0.58f, 0.02f, -0.18f), new Vector3(0.24f, 0.08f, 0.08f), darkMetalMaterial);
-
-        // The hammer reads as heavier at a glance: a short thick haft and a big blunt
-        // head, so which weapon is in hand is obvious from the silhouette alone.
-        Material haftMaterial = MakeMaterial(new Color(0.34f, 0.24f, 0.16f));
-        AddPart(player, "HammerHaft", PrimitiveType.Cube,
-            new Vector3(0.58f, 0.02f, 0.20f), new Vector3(0.09f, 0.09f, 0.86f), haftMaterial);
-        AddPart(player, "HammerHead", PrimitiveType.Cube,
-            new Vector3(0.58f, 0.02f, 0.68f), new Vector3(0.30f, 0.30f, 0.34f), darkMetalMaterial);
-        AddPart(player, "HammerCollar", PrimitiveType.Cube,
-            new Vector3(0.58f, 0.02f, 0.46f), new Vector3(0.15f, 0.15f, 0.10f), bladeMaterial);
-
-        // The bow is held ACROSS the body rather than along it, so at a glance it is
-        // obviously not a blade. Three staves make the curve and a pale string closes it.
+        // "Hammer", "Bow" and "Edge".
+        //
+        // These were grey primitive cubes until the Blender models landed. Every one of
+        // those models is built to the same convention the club already used: standing
+        // up along its own +Y with the grip on the origin. So a weapon is placed by
+        // putting its origin where the hand is and tipping it 90 degrees about X, which
+        // lays it along +Z - the way the player faces.
         Material bowMaterial = MakeMaterial(new Color(0.40f, 0.27f, 0.14f));
-        Material stringMaterial = MakeMaterial(new Color(0.86f, 0.83f, 0.72f));
 
-        AddPart(player, "BowGrip", PrimitiveType.Cube,
-            new Vector3(0.58f, 0.02f, 0.30f), new Vector3(0.07f, 0.34f, 0.07f), bowMaterial);
-        AddPart(player, "BowUpperLimb", PrimitiveType.Cube,
-            new Vector3(0.58f, 0.24f, 0.26f), new Vector3(0.05f, 0.30f, 0.10f), bowMaterial);
-        AddPart(player, "BowLowerLimb", PrimitiveType.Cube,
-            new Vector3(0.58f, -0.20f, 0.26f), new Vector3(0.05f, 0.30f, 0.10f), bowMaterial);
-        AddPart(player, "BowString", PrimitiveType.Cube,
-            new Vector3(0.58f, 0.02f, 0.20f), new Vector3(0.02f, 0.74f, 0.02f), stringMaterial);
+        // Where a weapon goes when the player has no hand to put it in. These are the
+        // offsets the primitive cubes used, kept as the fallback for a player still
+        // wearing the old single-mesh model.
+        GameObject sword = AttachWeapon(player, "Sword", "Sword", bladeMaterial,
+            new Vector3(0.58f, 0.02f, -0.20f), 1.0f);
+
+        // The hammer is one mesh, so it takes one colour, and dark iron is the one that
+        // reads as heavy. Its silhouette is what tells it apart from the sword anyway.
+        GameObject hammer = AttachWeapon(player, "Hammer", "Hammer", darkMetalMaterial,
+            new Vector3(0.58f, 0.02f, -0.22f), 1.0f);
+
+        // The bow is the one weapon that is NOT tipped over. It is 1.36 m from nock to
+        // nock along its own Y and it stays that way, held upright across the body, so
+        // at a glance it is obviously not a blade.
+        GameObject bow = AttachModel(player, "Bow", bowMaterial, 0f, 1.0f);
+        if (bow != null)
+        {
+            bow.name = "BowModel";
+            bow.transform.localPosition = new Vector3(0.58f, 0.02f, 0.28f);
+            bow.transform.localRotation = Quaternion.identity;
+        }
 
         // The Warden's Edge. Hidden until the gem is taken - PlayerWeapons finds it by
-        // the prefix "Edge" and keeps it switched off until then.
+        // the prefix "Edge" and keeps it switched off until then. Note that the model is
+        // called WardensEdge but the part has to be called Edge, which is why the model
+        // name and the part name are passed separately.
         //
-        // Longer than the sword by half again, and it glows, because the one thing the
-        // player must understand within a second of picking it up is that this is not
-        // the weapon they walked in with.
-        Material edgeMaterial = MakeGlowingMaterial(new Color(0.58f, 0.28f, 1f), 2.6f);
-        Material edgeCoreMaterial = MakeGlowingMaterial(new Color(0.85f, 0.72f, 1f), 4.0f);
+        // Longer than the sword by three quarters, and it glows, because the one thing
+        // the player must understand within a second of picking it up is that this is
+        // not the weapon they walked in with.
+        GameObject edge = AttachWeapon(player, "WardensEdge", "Edge", darkMetalMaterial,
+            new Vector3(0.58f, 0.02f, -0.42f), 1.0f);
 
-        AddPart(player, "EdgeBlade", PrimitiveType.Cube,
-            new Vector3(0.58f, 0.02f, 0.52f), new Vector3(0.10f, 0.05f, 1.55f), edgeMaterial);
-        AddPart(player, "EdgeCore", PrimitiveType.Cube,
-            new Vector3(0.58f, 0.02f, 0.52f), new Vector3(0.035f, 0.06f, 1.50f), edgeCoreMaterial);
-        AddPart(player, "EdgeGuard", PrimitiveType.Cube,
-            new Vector3(0.58f, 0.02f, -0.22f), new Vector3(0.40f, 0.09f, 0.10f), edgeMaterial);
-        AddPart(player, "EdgeGrip", PrimitiveType.Cube,
-            new Vector3(0.58f, 0.02f, -0.40f), new Vector3(0.08f, 0.08f, 0.34f), darkMetalMaterial);
+        // WardensEdge.fbx is deliberately two meshes rather than one: the dark iron of
+        // the blade, and the channel running up it with the stone in the guard. Keeping
+        // them separate is the whole reason it was exported as a group, and it is what
+        // lets the channel glow while the iron around it stays dark. One material on the
+        // pair would throw that away.
+        Material edgeCoreMaterial = MakeGlowingMaterial(new Color(0.698f, 0.420f, 1f), 3.4f);
+        PaintPartNamed(edge, "WardensEdgeCore", edgeCoreMaterial);
+
+        // And now move all four into the hand, if there is one.
+        //
+        // Hanging them off the player root at a fixed offset was right when the model was
+        // a single rigid lump with no arms. With a segmented player it is wrong in the
+        // most obvious way possible: the sword hovers beside the body while the hand that
+        // is supposed to be gripping it swings past.
+        //
+        // The bow is the one that is not tipped over. It is held upright across the body,
+        // so its own +Y stays pointing up rather than being laid along the forward axis.
+        Transform playerHand = FindTheWeaponHand(playerModel);
+        if (playerHand != null)
+        {
+            PutTheWeaponInTheHand(sword, playerHand, player.transform, 90f);
+            PutTheWeaponInTheHand(hammer, playerHand, player.transform, 90f);
+            PutTheWeaponInTheHand(bow, playerHand, player.transform, 0f);
+            PutTheWeaponInTheHand(edge, playerHand, player.transform, 90f);
+        }
 
         CharacterStats stats = player.AddComponent<CharacterStats>();
         stats.maximumHealth = 100f;
@@ -590,6 +622,11 @@ public static class ValleyBuilder
         // which is what keeps an already-saved scene working without a rebuild - but a
         // freshly built player should carry it from the start like every other script.
         player.AddComponent<PlayerSurge>();
+
+        // Reads all of the above once a frame and drives the limbs from it. Without this
+        // the player walks and does nothing else - every dodge, swing, jump, drink and
+        // hit lands with the body completely still.
+        player.AddComponent<PlayerAnimator>();
 
         return player;
     }
@@ -1452,6 +1489,32 @@ public static class ValleyBuilder
             club.transform.localPosition = new Vector3(0f, -0.06f, 0.12f);
         }
 
+        // If this Grunt has a real fist, the club goes IN it and the empty pivot stops
+        // being used at all.
+        //
+        // The pivot was how a rigid creature faked a swing: EnemyBrain rotated it and the
+        // club went round while the body stood still. Now that the arms actually move,
+        // driving both means driving the same swing twice from two places that do not
+        // agree - which on screen is a club orbiting in mid-air beside a creature miming
+        // the blow with an empty hand.
+        //
+        // Clearing weaponPivot is what stops EnemyBrain touching it. Every use of it over
+        // there is already guarded against null, so the arm carries the whole swing.
+        GameObject gruntBody = FindTheModelUnder(grunt, "Grunt");
+        Transform gruntFist = FindTheWeaponHand(gruntBody);
+
+        EnemyBrain gruntBrain = grunt.GetComponent<EnemyBrain>();
+
+        if (gruntFist != null && club != null)
+        {
+            PutTheWeaponInTheHand(club, gruntFist, grunt.transform, 78f);
+            gruntBrain.weaponPivot = null;
+        }
+        else
+        {
+            gruntBrain.weaponPivot = shoulderPivot.transform;
+        }
+
         CharacterStats stats = grunt.GetComponent<CharacterStats>();
         stats.maximumHealth = 30f;
         stats.currentHealth = 30f;
@@ -1472,7 +1535,6 @@ public static class ValleyBuilder
         brain.sweepHalfAngleDegrees = 60f;
         brain.retreatsAfterAttacking = false;
         brain.isTheWarden = false;
-        brain.weaponPivot = shoulderPivot.transform;
 
         // Arches well back over the raised club, then folds hard through the chop.
         brain.windUpLeanDegrees = 12f;
@@ -1596,34 +1658,48 @@ public static class ValleyBuilder
     private static GameObject AttachModel(GameObject parent, string modelName,
         Material material, float feetBelowCentre, float modelScale)
     {
-        GameObject prefab = Resources.Load<GameObject>("Models/" + modelName);
+        // Prefer a segmented model over the single-lump one wherever a segmented export
+        // exists. A segmented mesh is the same creature cut into named body parts -
+        // Hips, Torso, ThighL and so on - each a child Transform with its origin on the
+        // joint it turns around. That is what ProceduralAnimator needs to be able to
+        // move a leg instead of tilting the whole animal.
+        //
+        // The choice is made by which file is present rather than by a flag, so as each
+        // segmented mesh is exported it starts animating with no code change here. A
+        // creature with no segmented export keeps exactly the behaviour it has today.
+        bool modelIsSegmented = false;
+        GameObject prefab = Resources.Load<GameObject>("Models/" + modelName + "Segmented");
+
+        if (prefab != null)
+        {
+            modelIsSegmented = true;
+        }
+        else
+        {
+            prefab = Resources.Load<GameObject>("Models/" + modelName);
+        }
+
         if (prefab == null)
         {
             Debug.LogWarning("Model '" + modelName + "' not found - leaving " + parent.name + " invisible.");
             return null;
         }
 
-        GameObject model = Object.Instantiate(prefab);
-        model.name = modelName + "Model";
-        model.transform.SetParent(parent.transform);
-        model.transform.localPosition = new Vector3(0f, -feetBelowCentre, 0f);
-        model.transform.localRotation = Quaternion.identity;
-        model.transform.localScale = new Vector3(modelScale, modelScale, modelScale);
+        GameObject model;
 
-        int childIndex = 0;
-        while (childIndex < model.transform.childCount)
+        if (modelIsSegmented)
         {
-            model.transform.GetChild(childIndex).localScale = Vector3.one;
-            childIndex = childIndex + 1;
+            model = AttachSegmentedModel(parent, modelName, prefab, feetBelowCentre, modelScale);
+        }
+        else
+        {
+            model = AttachSingleMeshModel(parent, modelName, prefab, feetBelowCentre, modelScale);
         }
 
-        Renderer[] surfaces = model.GetComponentsInChildren<Renderer>();
-        int surfaceIndex = 0;
-        while (surfaceIndex < surfaces.Length)
-        {
-            surfaces[surfaceIndex].material = material;
-            surfaceIndex = surfaceIndex + 1;
-        }
+        // Every part gets a material chosen from its own name, rather than the whole
+        // creature getting one flat colour. Only the Player has bare skin worth showing;
+        // on a creature a part called "Head" is hide like the rest of it.
+        PaintEveryPart(model, material, modelName == "Player");
 
         // The controller on the parent is the only collider a character may have.
         // Anything the model brought with it would make every sword swing count twice.
@@ -1635,6 +1711,124 @@ public static class ValleyBuilder
             strayIndex = strayIndex + 1;
         }
 
+        // The animator goes on the wrapper, which is deliberate and is what lets it
+        // coexist with EnemyBrain. The brain leans and sinks this same object for its
+        // wind-ups; the animator only ever writes to this object's CHILDREN. Two
+        // components, two layers of the hierarchy, no contention.
+        if (modelIsSegmented)
+        {
+            model.AddComponent<ProceduralAnimator>();
+        }
+
+        return model;
+    }
+
+
+    // A segmented model needs a plain empty wrapper between the creature and the mesh.
+    //
+    // Unity does not import these files the way the rest of this file assumed. The
+    // Blender export has exactly ONE root object - Hips - and with "preserve hierarchy"
+    // switched off the importer discards the file-level wrapper it would otherwise add
+    // and promotes that single root to BE the asset root, renaming it after the file.
+    // So the object Resources.Load hands back is not a container holding a creature. It
+    // IS the hips: it carries the hip mesh, the hips' 0.86 m height off the floor, and
+    // the -90 degree rotation that stands the whole creature upright.
+    //
+    // That collides with two separate things at once.
+    //
+    // EnemyBrain leans and sinks whatever this method returns, and measures every
+    // wind-up from restingBodyHeight = -bodyHeight/2. If the thing it is handed is also
+    // the hips, then the hips' own 0.86 m has to be thrown away to satisfy the brain -
+    // which drops the creature until its hips sit where its feet should be and buries it
+    // to the waist in the terrain.
+    //
+    // ProceduralAnimator, meanwhile, looks for a CHILD called "Hips" to bob, and could
+    // never find one, because the hips are the very object it is bolted to - and it is
+    // forbidden from writing to its own transform, because that transform belongs to the
+    // brain. So the bob, the breathing and the death sink all silently did nothing.
+    //
+    // One empty wrapper answers both. The wrapper is what the brain leans and what the
+    // animator rides; the hips hang inside it keeping the exact transform the importer
+    // gave them. Nothing about the Blender export has to change.
+    private static GameObject AttachSegmentedModel(GameObject parent, string modelName,
+        GameObject prefab, float feetBelowCentre, float modelScale)
+    {
+        GameObject wrapper = new GameObject(modelName + "Model");
+        wrapper.transform.SetParent(parent.transform);
+        wrapper.transform.localPosition = new Vector3(0f, -feetBelowCentre, 0f);
+        wrapper.transform.localRotation = Quaternion.identity;
+        wrapper.transform.localScale = new Vector3(modelScale, modelScale, modelScale);
+
+        GameObject body = Object.Instantiate(prefab);
+        body.transform.SetParent(wrapper.transform);
+
+        // Keep every part of the transform the importer worked out, exactly as it is.
+        // The rotation is what stands the creature up; the position is what lifts the
+        // hips off the floor so that the feet, not the pelvis, land on it. Forcing
+        // either of them to a tidy-looking value is what laid the first build flat on
+        // its back doing a swimming stroke.
+        body.transform.localPosition = prefab.transform.localPosition;
+        body.transform.localRotation = prefab.transform.localRotation;
+        body.transform.localScale = prefab.transform.localScale;
+
+        NameTheHips(body);
+
+        return wrapper;
+    }
+
+
+    // ProceduralAnimator finds body parts by name, and the name it needs at the top of
+    // the creature is "Hips". Whether that name survives the import depends on how many
+    // root objects the Blender file happened to have, which is not something this code
+    // should have to know - so it is settled by looking rather than by assuming.
+    //
+    // If nothing anywhere in the model is called "Hips", the importer promoted the hips
+    // to the root and renamed it after the file, and renaming it back is correct. If a
+    // "Hips" is already in there, the importer kept a wrapper of its own, the names are
+    // already right, and nothing is touched.
+    private static void NameTheHips(GameObject model)
+    {
+        Transform[] parts = model.GetComponentsInChildren<Transform>();
+
+        int index = 0;
+        while (index < parts.Length)
+        {
+            if (parts[index].name == "Hips")
+            {
+                return;
+            }
+            index = index + 1;
+        }
+
+        model.name = "Hips";
+    }
+
+
+    // The original single-lump path, unchanged in behaviour.
+    //
+    // A single-mesh export bakes the Blender Z-up to Unity Y-up conversion straight into
+    // its vertices, so its root rotation really is identity and its origin really is at
+    // its feet. Both of the corrections the segmented path is careful to preserve would
+    // be wrong here.
+    private static GameObject AttachSingleMeshModel(GameObject parent, string modelName,
+        GameObject prefab, float feetBelowCentre, float modelScale)
+    {
+        GameObject model = Object.Instantiate(prefab);
+        model.name = modelName + "Model";
+        model.transform.SetParent(parent.transform);
+        model.transform.localPosition = new Vector3(0f, -feetBelowCentre, 0f);
+        model.transform.localRotation = Quaternion.identity;
+        model.transform.localScale = new Vector3(modelScale, modelScale, modelScale);
+
+        // These imports arrive with a stray scale on their one child, which has to be
+        // flattened or the model comes out a hundred times too big.
+        int childIndex = 0;
+        while (childIndex < model.transform.childCount)
+        {
+            model.transform.GetChild(childIndex).localScale = Vector3.one;
+            childIndex = childIndex + 1;
+        }
+
         return model;
     }
 
@@ -1643,14 +1837,21 @@ public static class ValleyBuilder
     // the game that does not require reaching the player - so it is the enemy that turns
     // standing in the open from free into expensive.
     //
-    // Reuses the Grunt model at three-quarter size and a sickly green, because there is
-    // no Spitter mesh. Honest stand-in rather than a fifth half-finished model.
+    // Has its own mesh now - a lighter frame with a tail and a pouch of rocks on its
+    // hip. Until that landed it wore the Grunt's body shrunk to three quarters, which
+    // made round three read as unfair: the ranged enemy and the melee one looked like
+    // the same creature, so there was no way to tell by looking which one was about to
+    // close on you and which was about to throw.
+    //
+    // The scale went back to 1.0 along with the mesh. The old 0.78 existed only to make
+    // a Grunt look like something smaller, and applying it to a body already modelled at
+    // the right size would leave the Spitter rattling around inside its own controller.
     private static EnemyBrain MakeSpitter(GameObject parent, Vector3 where)
     {
         Material hideMaterial = MakeMaterial(new Color(0.36f, 0.50f, 0.26f));
 
         GameObject spitter = MakeEnemyShell(parent, "Spitter", where,
-            "Grunt", hideMaterial, 1.55f, 0.40f, 0.78f);
+            "Spitter", hideMaterial, 1.55f, 0.40f, 1.0f);
 
         CharacterStats stats = spitter.GetComponent<CharacterStats>();
         stats.maximumHealth = 12f;
@@ -1903,6 +2104,327 @@ public static class ValleyBuilder
     // One visible piece of a creature. Colliders are stripped from every part, because
     // the CharacterController on the root is the only collider a character should have -
     // a second one would make each sword swing register twice.
+    // ----------------------------------------------------------------------------
+    // Per-part materials
+    // ----------------------------------------------------------------------------
+    //
+    // Every character used to be painted one flat colour, because a single material was
+    // assigned to every renderer on it. The Player has twenty-nine parts - belt, buckle,
+    // tunic skirt, collar, chest strap, bracers, boot cuffs, shoulder guard, hair - and
+    // all of them came out the same blue-grey as the skin. Every one of those pieces was
+    // modelled and then rendered invisible.
+    //
+    // It is worse under the style lens. NEON and CHALK draw flat unlit colour with no
+    // shading at all, so with one material the shape difference between a bracer and the
+    // arm inside it disappears completely.
+    //
+    // The rules below are the same ones Tools/preview_coloured.py uses to colour these
+    // models in Blender, deliberately, so what is looked at there is what appears here.
+    // The hex values are ASSET_BIBLE.md section 0.4.
+    //
+    // StyleLens is unaffected by this. It snapshots every renderer and remembers the
+    // colour each one STARTED with, then recolours from that - so giving parts their own
+    // materials does not fight it. It gives it more to work with: the lenses now have
+    // per-part colour to push around instead of one flat tone per creature.
+
+    private static Material leatherMaterial;
+    private static Material darkIronMaterial;
+    private static Material paleMetalMaterial;
+    private static Material skinMaterial;
+    private static Material hairMaterial;
+    private static Material enemyEyeMaterial;
+    private static Material vaultVioletMaterial;
+
+    // Unity reports a destroyed material as null, so each of these quietly rebuilds
+    // itself after a domain reload rather than handing back a dead reference.
+    private static void MakeSureThePartPaletteExists()
+    {
+        if (leatherMaterial == null)
+        {
+            leatherMaterial = MakeMaterial(ColourFromHex("#5C4632"));
+        }
+        if (darkIronMaterial == null)
+        {
+            darkIronMaterial = MakeMaterial(ColourFromHex("#3A3A42"));
+        }
+        if (paleMetalMaterial == null)
+        {
+            paleMetalMaterial = MakeMaterial(ColourFromHex("#8A8577"));
+        }
+        if (skinMaterial == null)
+        {
+            skinMaterial = MakeMaterial(ColourFromHex("#C89B7B"));
+        }
+        if (hairMaterial == null)
+        {
+            hairMaterial = MakeMaterial(ColourFromHex("#3A2E28"));
+        }
+        if (enemyEyeMaterial == null)
+        {
+            // The glow every enemy has. This is the one piece of a creature the player
+            // is meant to be able to find in the dark.
+            enemyEyeMaterial = MakeGlowingMaterial(ColourFromHex("#FFD94D"), 4f);
+        }
+        if (vaultVioletMaterial == null)
+        {
+            vaultVioletMaterial = MakeGlowingMaterial(ColourFromHex("#8C38F2"), 5f);
+        }
+    }
+
+
+    private static void PaintEveryPart(GameObject model, Material bodyMaterial,
+        bool isThePlayer)
+    {
+        MakeSureThePartPaletteExists();
+
+        Renderer[] surfaces = model.GetComponentsInChildren<Renderer>(true);
+        int surfaceIndex = 0;
+
+        while (surfaceIndex < surfaces.Length)
+        {
+            surfaces[surfaceIndex].material = MaterialForPart(
+                surfaces[surfaceIndex].gameObject.name, bodyMaterial, isThePlayer);
+            surfaceIndex = surfaceIndex + 1;
+        }
+    }
+
+
+    // Picks a material from the part's name.
+    //
+    // The names come from the Blender build scripts and are already descriptive, so
+    // these read as what they are rather than as a lookup table. ORDER MATTERS: the
+    // Warden's "HeadSlot" has to be caught before both the "slot" rule that would make it
+    // iron and the "head" rule that would make it skin.
+    private static Material MaterialForPart(string partName, Material bodyMaterial,
+        bool isThePlayer)
+    {
+        string lowered = partName.ToLower();
+
+        if (lowered.Contains("eye") == true)
+        {
+            return enemyEyeMaterial;
+        }
+        if (lowered.Contains("headslot") == true)
+        {
+            return vaultVioletMaterial;
+        }
+        if (lowered.Contains("hair") == true)
+        {
+            return hairMaterial;
+        }
+        if (lowered.Contains("buckle") == true)
+        {
+            return paleMetalMaterial;
+        }
+        if (lowered.Contains("guard") == true || lowered.Contains("slot") == true)
+        {
+            return darkIronMaterial;
+        }
+
+        string[] leatherWords = { "belt", "strap", "bracer", "cuff", "pouch", "wrap",
+            "foot", "boot" };
+        int wordIndex = 0;
+        while (wordIndex < leatherWords.Length)
+        {
+            if (lowered.Contains(leatherWords[wordIndex]) == true)
+            {
+                return leatherMaterial;
+            }
+            wordIndex = wordIndex + 1;
+        }
+
+        if (isThePlayer == true)
+        {
+            // Only the traveller has bare skin worth showing. On a creature a head is
+            // hide like everything else, which is why this is gated.
+            string[] skinWords = { "head", "hand", "brow", "nose" };
+            int skinIndex = 0;
+            while (skinIndex < skinWords.Length)
+            {
+                if (lowered.Contains(skinWords[skinIndex]) == true)
+                {
+                    return skinMaterial;
+                }
+                skinIndex = skinIndex + 1;
+            }
+        }
+
+        return bodyMaterial;
+    }
+
+
+    // The palette in ASSET_BIBLE.md is written as hex, and so are the Blender preview
+    // scripts, so this reads it as hex too rather than making every value get converted
+    // by hand into something that can no longer be compared against the document.
+    public static Color ColourFromHex(string hex)
+    {
+        string digits = hex;
+        if (digits.StartsWith("#") == true)
+        {
+            digits = digits.Substring(1);
+        }
+
+        int red = System.Convert.ToInt32(digits.Substring(0, 2), 16);
+        int green = System.Convert.ToInt32(digits.Substring(2, 2), 16);
+        int blue = System.Convert.ToInt32(digits.Substring(4, 2), 16);
+
+        return new Color(red / 255f, green / 255f, blue / 255f);
+    }
+
+
+    // The model hung on a character by AttachModel, found by the name it was given.
+    // Returns null for a character whose model failed to load.
+    private static GameObject FindTheModelUnder(GameObject character, string modelName)
+    {
+        Transform found = character.transform.Find(modelName + "Model");
+
+        if (found == null)
+        {
+            return null;
+        }
+
+        return found.gameObject;
+    }
+
+
+    // Which arm every character carries its weapon in.
+    //
+    // ONE constant, because the weapon and the arm that swings it have to agree and
+    // there is no way to check that they do by looking at the code. They disagreed in the
+    // first build: the club hung off a pivot on one side while the animator swung the arm
+    // on the other, so the club floated in mid-air beside a creature miming a swing with
+    // its empty hand. Everything that needs to know now reads this.
+    //
+    // Beware the names. Blender and Unity mirror each other, so the parts exported as "L"
+    // arrive on the creature's RIGHT once imported.
+    private const bool WeaponIsInTheArmNamedLeft = true;
+
+
+    // The hand or fist a weapon should be held in, or null if this model has none -
+    // which is every single-mesh model, and is why every caller falls back rather than
+    // assuming.
+    //
+    // Creatures call theirs "Fist", the player calls theirs "Hand", so both are tried.
+    private static Transform FindTheWeaponHand(GameObject model)
+    {
+        if (model == null)
+        {
+            return null;
+        }
+
+        string side = WeaponIsInTheArmNamedLeft ? "L" : "R";
+        string[] wanted = { "Fist" + side, "Hand" + side };
+
+        Transform[] parts = model.GetComponentsInChildren<Transform>(true);
+
+        int wantedIndex = 0;
+        while (wantedIndex < wanted.Length)
+        {
+            int index = 0;
+            while (index < parts.Length)
+            {
+                if (parts[index].name == wanted[wantedIndex])
+                {
+                    return parts[index];
+                }
+                index = index + 1;
+            }
+            wantedIndex = wantedIndex + 1;
+        }
+
+        return null;
+    }
+
+
+    // Puts a weapon in a hand, so that it goes wherever the hand goes.
+    //
+    // This is the fix for a weapon that floated in place while the arm holding it swung
+    // through empty air. Before the models were segmented there was no hand to hold
+    // anything, so weapons hung off the character root at a guessed offset and EnemyBrain
+    // rotated a separate empty pivot to fake a swing. Now that the arms actually move,
+    // the weapon has to be part of the arm or the two will always disagree.
+    //
+    // The placement is done in WORLD terms and left to Unity to convert. The hand sits at
+    // the end of a chain - hips, torso, shoulders, upper arm, forearm - and the hips
+    // carry the -90 degree stand-up rotation, so working out the local rotation that
+    // happens to point a blade forwards means composing that whole chain by hand and
+    // getting it right. Setting the world rotation says what is actually wanted: the
+    // model's own +Y runs along the direction the character faces.
+    private static void PutTheWeaponInTheHand(GameObject weapon, Transform hand,
+        Transform character, float tipDegrees)
+    {
+        if (weapon == null || hand == null || character == null)
+        {
+            return;
+        }
+
+        weapon.transform.SetParent(hand, true);
+        weapon.transform.position = hand.position;
+        weapon.transform.rotation = character.rotation * Quaternion.Euler(tipDegrees, 0f, 0f);
+    }
+
+
+    // Hangs a weapon model on the player, laid along the direction the player faces.
+    //
+    // The name the object ends up with is what PlayerWeapons switches on and off, and it
+    // is not always the model's own name - the Warden's Edge is modelled as
+    // "WardensEdge" but has to be found by the prefix "Edge". So the two are separate
+    // arguments rather than one.
+    private static GameObject AttachWeapon(GameObject player, string modelName,
+        string partName, Material material, Vector3 whereItIsHeld, float weaponScale)
+    {
+        GameObject weapon = AttachModel(player, modelName, material, 0f, weaponScale);
+
+        if (weapon == null)
+        {
+            return null;
+        }
+
+        weapon.name = partName + "Model";
+        weapon.transform.localPosition = whereItIsHeld;
+
+        // Ninety degrees about X takes the model's own +Y onto the world +Z, which is
+        // the way the player faces. The grip is on the model's origin, so once it is
+        // tipped the grip is exactly where the hand is and the blade runs forward.
+        weapon.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+
+        return weapon;
+    }
+
+
+    // Gives ONE mesh inside a model a different material from the rest of it.
+    //
+    // AttachModel paints every renderer it finds the same colour, which is right for a
+    // creature and wrong for anything built out of two materials on purpose.
+    private static void PaintPartNamed(GameObject model, string partName, Material material)
+    {
+        if (model == null)
+        {
+            return;
+        }
+
+        Renderer[] surfaces = model.GetComponentsInChildren<Renderer>(true);
+        int index = 0;
+        bool foundIt = false;
+
+        while (index < surfaces.Length)
+        {
+            if (surfaces[index].gameObject.name == partName)
+            {
+                surfaces[index].material = material;
+                foundIt = true;
+            }
+            index = index + 1;
+        }
+
+        if (foundIt == false)
+        {
+            Debug.LogWarning("No part called '" + partName + "' inside " + model.name
+                + " - it will be left the same colour as the rest of the model.");
+        }
+    }
+
+
     private static GameObject AddPart(GameObject parent, string name, PrimitiveType shape,
         Vector3 localPosition, Vector3 localScale, Material material)
     {

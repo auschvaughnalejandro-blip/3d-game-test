@@ -171,6 +171,28 @@ public class EnemyBrain : MonoBehaviour
     // Stops one death being announced twice.
     private bool hasAlreadyDied = false;
 
+    // The limb animator on the model, when this creature has a segmented one. Null for
+    // every creature still using a single-mesh model, so every call to it is guarded.
+    //
+    // Found the first time it is wanted rather than in Awake, and this timing is not
+    // negotiable. ValleyBuilder adds this brain to the creature and only THEN hands it
+    // bodyTransform - and for an enemy spawned in the middle of a round rather than
+    // baked into the scene, AddComponent has already run Awake by that point, with
+    // bodyTransform still null. An Awake lookup finds nothing for every enemy in every
+    // round. Looking it up on demand is the only timing that works for both.
+    private ProceduralAnimator limbs;
+    private bool haveLookedForTheLimbs = false;
+
+    // How long this creature has been lying dead, and how long it is allowed to lie
+    // there before it is switched off.
+    //
+    // A creature with no limb animator has nothing to collapse, so it keeps the old
+    // behaviour exactly: the burst goes off and the body is gone the same frame.
+    // Leaving a rigid single-mesh statue standing for a second after it burst would
+    // look worse than popping it.
+    private float secondsSpentDying = 0f;
+    private float secondsAllowedToLieDying = 0f;
+
     void Awake()
     {
         ownStats = GetComponent<CharacterStats>();
@@ -193,6 +215,28 @@ public class EnemyBrain : MonoBehaviour
         {
             restingBodyHeight = bodyTransform.localPosition.y;
         }
+    }
+
+    // The animator sits on the same object this brain leans - the model wrapper - which
+    // is exactly what lets the two share a creature without fighting over a transform.
+    // See ValleyBuilder.AttachSegmentedModel.
+    private ProceduralAnimator TheLimbs()
+    {
+        if (haveLookedForTheLimbs == true)
+        {
+            return limbs;
+        }
+
+        // Deliberately does NOT mark the search as done. A creature whose body has not
+        // been hung on it yet gets asked again next time rather than being written off.
+        if (bodyTransform == null)
+        {
+            return null;
+        }
+
+        limbs = bodyTransform.GetComponent<ProceduralAnimator>();
+        haveLookedForTheLimbs = true;
+        return limbs;
     }
 
     void Start()
@@ -254,6 +298,7 @@ public class EnemyBrain : MonoBehaviour
             // any other way used to die silently - no burst, no sound, no essence, and
             // in the Warden's case no eye left behind for the player to pick up.
             Die();
+            KeepLyingThere();
             return;
         }
 
@@ -523,6 +568,17 @@ public class EnemyBrain : MonoBehaviour
 
         bodyTransform.localRotation = Quaternion.Euler(lean, 0f, 0f);
         bodyTransform.localPosition = new Vector3(0f, restingBodyHeight + sink, 0f);
+
+        // The root leaning is the whole creature tipping. The shoulders hauling the
+        // weapon up are a separate layer inside it, and this is where the animator is
+        // told how far through that haul we are. Hooked here rather than in each attack
+        // shape because every shape - sweep, slam and lunge - comes through this one
+        // method with the phase already worked out.
+        ProceduralAnimator animator = TheLimbs();
+        if (animator != null)
+        {
+            animator.ShowWindUp(howFarThrough);
+        }
     }
 
     // The body folding forward with the blow, driving through it and then rebounding.
@@ -552,6 +608,12 @@ public class EnemyBrain : MonoBehaviour
 
         bodyTransform.localRotation = Quaternion.Euler(lean, 0f, 0f);
         bodyTransform.localPosition = new Vector3(0f, restingBodyHeight + drop, 0f);
+
+        ProceduralAnimator animator = TheLimbs();
+        if (animator != null)
+        {
+            animator.ShowStrike(howFarThrough);
+        }
     }
 
     // How far the weapon has been raised, as an angle, given how far through the
@@ -1166,6 +1228,14 @@ public class EnemyBrain : MonoBehaviour
     {
         transform.localScale = originalScale;
 
+        // The arm does not snap back - the animator fades the swing out over a couple of
+        // tenths, so the walk picks the shoulders back up smoothly.
+        ProceduralAnimator animator = TheLimbs();
+        if (animator != null)
+        {
+            animator.ClearAttack();
+        }
+
         if (bodyTransform != null)
         {
             bodyTransform.localRotation = Quaternion.identity;
@@ -1480,18 +1550,89 @@ public class EnemyBrain : MonoBehaviour
             GameDirector.instance.OnEnemyDied(this, ownStats.essenceDroppedOnDeath, transform.position);
         }
 
+        // Everything above happens on the frame of the kill, whether or not the body
+        // then lingers - the essence, the sound, the burst and the round's tally are all
+        // settled immediately, so a collapse can never hold a round open. RoundDirector
+        // counts a creature as living only if it is BOTH switched on and not dead, so a
+        // body still folding up is already not counted.
+        StopBeingAnObstacle();
+
+        secondsSpentDying = 0f;
+        secondsAllowedToLieDying = 0f;
+
+        ProceduralAnimator animator = TheLimbs();
+        if (animator != null)
+        {
+            animator.PlayDeath();
+            secondsAllowedToLieDying = 1f;
+        }
+
+        KeepLyingThere();
+    }
+
+    // A corpse must stop pushing the player around and stop soaking up swings the
+    // instant it dies, however long it takes to finish falling over. Both the controller
+    // and the agent go, which between them are the only reasons anything else in the
+    // game can touch this creature: the player's swing finds enemies with an
+    // OverlapSphere, and the controller is the only collider a creature has.
+    private void StopBeingAnObstacle()
+    {
+        if (bodyController != null)
+        {
+            bodyController.enabled = false;
+        }
+
+        if (pathAgent != null && pathAgent.enabled == true)
+        {
+            pathAgent.enabled = false;
+        }
+    }
+
+    private void KeepLyingThere()
+    {
+        if (hasAlreadyDied == false)
+        {
+            return;
+        }
+
+        secondsSpentDying = secondsSpentDying + Time.deltaTime;
+
+        if (secondsSpentDying < secondsAllowedToLieDying)
+        {
+            return;
+        }
+
         gameObject.SetActive(false);
     }
 
     public void ResetToStartingState()
     {
         hasAlreadyDied = false;
+        secondsSpentDying = 0f;
+        secondsAllowedToLieDying = 0f;
         ownStats.RestoreEverything();
+
+        // Enemies are recycled between rounds rather than rebuilt, so a creature that
+        // collapsed has to be told to stand up again. Without this it would come back
+        // folded on the floor for the rest of the run.
+        ProceduralAnimator animator = TheLimbs();
+        if (animator != null)
+        {
+            animator.ReturnToLife();
+        }
 
         bodyController.enabled = false;
         transform.position = startingPosition;
         transform.rotation = startingRotation;
         bodyController.enabled = true;
+
+        // Dying switched the route planner off so that a body on the floor would stop
+        // shouldering living enemies out of its way. Start() is what normally turns it
+        // back on, and Start does not run again on a creature that was only switched
+        // off and on - so without this line every recycled enemy would spend the rest of
+        // the run with no pathfinding, walking straight into rocks.
+        StartPathfindingIfPossible();
+
         WarpTheAgentTo(startingPosition);
 
         ReturnToRestingPose();

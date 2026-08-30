@@ -40,6 +40,30 @@ public class PlayerCombat : MonoBehaviour
         return swingsMade;
     }
 
+    // What the last swing was, and how long the player is locked out for because of it.
+    //
+    // Both are read by PlayerAnimator, which runs the swing animation across exactly this
+    // cooldown. That is deliberate: the swing has no wind-up of its own in gameplay - the
+    // damage lands the instant the button goes down - so the cooldown IS the swing as far
+    // as the player can tell, and an animation any other length would either finish while
+    // they were still locked out or still be going when they could swing again.
+    //
+    // It also means a surge speeds the animation up by exactly as much as it speeds the
+    // attack up, with nothing extra to keep in sync, because the multiplier is already
+    // baked into the cooldown before it is stored here.
+    private bool lastSwingWasHeavy = false;
+    private float lastSwingTookSeconds = 0.45f;
+
+    public bool LastSwingWasHeavy()
+    {
+        return lastSwingWasHeavy;
+    }
+
+    public float LastSwingTookSeconds()
+    {
+        return lastSwingTookSeconds;
+    }
+
     void Awake()
     {
         ownStats = GetComponent<CharacterStats>();
@@ -455,6 +479,11 @@ public class PlayerCombat : MonoBehaviour
         // applied here, once, after the weapon has decided its own timing - so a new
         // weapon added later is sped up by the surge without knowing the surge exists.
         cooldownSecondsRemaining = cooldownSecondsRemaining * PlayerSurge.AttackTimingMultiplierNow();
+
+        // Remembered for the animator, after the surge multiplier has been applied so
+        // that the animation matches the swing the player actually just made.
+        lastSwingWasHeavy = isHeavy;
+        lastSwingTookSeconds = cooldownSecondsRemaining;
 
         // The weapon names its own sound, so adding a third weapon later needs no
         // change here at all.
