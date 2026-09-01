@@ -46,6 +46,18 @@ public class Pillar : MonoBehaviour
         isRising = false;
     }
 
+    // Everything a new run needs from a pillar: standing again if it was smashed,
+    // undamaged, and back underground waiting for the round that raises it. Shatter
+    // switches the object off, so without the SetActive here a pillar broken in one run
+    // is quietly missing from every run after it.
+    public void RestoreForANewRun()
+    {
+        isBroken = false;
+        hitsTaken = 0;
+        gameObject.SetActive(true);
+        HideImmediately();
+    }
+
     public void BeginRising()
     {
         if (isBroken == true)

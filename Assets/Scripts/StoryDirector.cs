@@ -213,7 +213,7 @@ public class StoryDirector : MonoBehaviour
             if (doorOutOfTheDungeon != null)
             {
                 doorOutOfTheDungeon.Open();
-                GameSound.Play("PortalOpen", 0.8f);
+                GameSound.Play("StoryBeat", 0.85f);
             }
         }
         else if (beatToRun == BeatOrrinGreetsYouHome)
@@ -291,7 +291,7 @@ public class StoryDirector : MonoBehaviour
         if (doorHomeFromTheVault != null)
         {
             doorHomeFromTheVault.Open();
-            GameSound.Play("PortalOpen", 0.8f);
+            GameSound.Play("StoryBeat", 0.85f);
         }
 
         DialogueBox.instance.Murmur(Orrin, "There. Behind you - the way out. Come up, and let me look at you.");
@@ -314,6 +314,15 @@ public class StoryDirector : MonoBehaviour
 
         OpenTheNorthGate();
 
+        // Back out under the sky. The Vault's darkness is applied to the whole scene's
+        // lighting rather than to the room, so without this the valley keeps it for the
+        // entire walk home and for the ending shot that follows.
+        VaultAtmosphere atmosphere = Object.FindFirstObjectByType<VaultAtmosphere>();
+        if (atmosphere != null)
+        {
+            atmosphere.ReturnToTheValley();
+        }
+
         if (orrinInTheValley != null)
         {
             orrinInTheValley.gameObject.SetActive(true);
@@ -333,6 +342,39 @@ public class StoryDirector : MonoBehaviour
     // ------------------------------------------------------------------------
     // The north gate
     // ------------------------------------------------------------------------
+
+    // Put back everything the story changes about the world, so a second run does not
+    // begin with the last one's ending still standing in it. The act itself is set by
+    // whoever called this - a new run and a loaded checkpoint want different answers.
+    public void ResetForANewRun()
+    {
+        storyBeatWaiting = BeatNothing;
+        secondsUntilNextStoryBeat = 0f;
+
+        ShutTheNorthGate();
+
+        // Orrin only appears in the valley for the homecoming. Left switched on, he is
+        // standing at the north gate for the whole of the next run, waiting to greet
+        // somebody who has not been anywhere yet.
+        if (orrinInTheValley != null)
+        {
+            orrinInTheValley.gameObject.SetActive(false);
+        }
+    }
+
+    private void ShutTheNorthGate()
+    {
+        gateIsOpening = false;
+
+        // Nothing to put back if it was never opened. gateShutPosition is only measured
+        // on the way up, so writing it unmeasured would drop a ten metre gate on the
+        // world origin.
+        if (theGate == null || gateHasBeenMeasured == false)
+        {
+            return;
+        }
+        theGate.position = gateShutPosition;
+    }
 
     private void OpenTheNorthGate()
     {

@@ -102,10 +102,87 @@ public class CharacterStats : MonoBehaviour
     {
         RefillStaminaOverTime();
         FadeTheHitFlash();
+        BeatTheHeartWhenNearlyDead();
+    }
+
+    // ------------------------------------------------------------------------
+    // Nearly dead
+    //
+    // The health bar is in the corner of the screen and a player in a fight is not
+    // looking at it - they are looking at the thing winding up in front of them. This
+    // says the same thing without asking for their eyes.
+    //
+    // It quickens as the health drops, which is the part that carries the information.
+    // A heartbeat at a constant rate only says "low"; one that is getting faster says
+    // "and getting worse", and that is the difference between a warning and a decoration.
+    // ------------------------------------------------------------------------
+
+    private const float HeartbeatBeginsBelowFraction = 0.30f;
+
+    private float secondsUntilNextHeartbeat = 0f;
+
+    private void BeatTheHeartWhenNearlyDead()
+    {
+        // Only the player. An enemy on low health is good news and does not need a
+        // pulse, and thirteen of them would be unbearable.
+        if (CompareTag("Player") == false)
+        {
+            return;
+        }
+
+        if (isDead == true || maximumHealth <= 0f)
+        {
+            secondsUntilNextHeartbeat = 0f;
+            return;
+        }
+
+        float healthFraction = currentHealth / maximumHealth;
+        if (healthFraction > HeartbeatBeginsBelowFraction)
+        {
+            // Reset rather than merely stop, so healing back up and dropping again
+            // starts the next beat immediately instead of part-way through a wait.
+            secondsUntilNextHeartbeat = 0f;
+            return;
+        }
+
+        secondsUntilNextHeartbeat = secondsUntilNextHeartbeat - Time.deltaTime;
+        if (secondsUntilNextHeartbeat > 0f)
+        {
+            return;
+        }
+
+        // One at the threshold, nought at death.
+        float howMuchIsLeft = healthFraction / HeartbeatBeginsBelowFraction;
+
+        secondsUntilNextHeartbeat = Mathf.Lerp(0.58f, 1.20f, howMuchIsLeft);
+        GameSound.Play("Heartbeat", Mathf.Lerp(0.85f, 0.5f, howMuchIsLeft));
+    }
+
+    // Set by anything that is straining hard enough that stamina should not be coming
+    // back - so far, the bow held at draw.
+    //
+    // Counted down rather than kept as a plain bool because the order components run
+    // their Update in is not defined. A flag set in one Update and cleared in another
+    // works or does not work depending on which of the two Unity happens to call first,
+    // and that is a bug that appears and disappears between play sessions.
+    private float staminaRegenHeldOffForSeconds = 0f;
+
+    public void HoldOffStaminaRegen(float seconds)
+    {
+        if (seconds > staminaRegenHeldOffForSeconds)
+        {
+            staminaRegenHeldOffForSeconds = seconds;
+        }
     }
 
     private void RefillStaminaOverTime()
     {
+        if (staminaRegenHeldOffForSeconds > 0f)
+        {
+            staminaRegenHeldOffForSeconds = staminaRegenHeldOffForSeconds - Time.deltaTime;
+            return;
+        }
+
         if (currentStamina < maximumStamina)
         {
             currentStamina = currentStamina + staminaRefilledPerSecond * Time.deltaTime;

@@ -52,6 +52,29 @@ public class CoachLines : MonoBehaviour
         }
     }
 
+    // Re-armed when a run is reset. Every one of these is a said-it-once latch, so
+    // without this a second run is played in total silence - the coaching reads as
+    // having been removed rather than as already spent.
+    public void ResetForANewRun()
+    {
+        saidRoundOne = false;
+        saidRoundTwo = false;
+        saidRoundThree = false;
+        saidRoundFour = false;
+        saidFirstEssence = false;
+        saidShrine = false;
+        saidSpitters = false;
+        saidPortal = false;
+        saidWardenPhaseTwo = false;
+        saidWardenPhaseThree = false;
+        saidWardenDead = false;
+
+        queuedLine = "";
+        secondsUntilQueuedLine = 0f;
+        roundWeLastSaw = 0;
+        timesTheLensHasChanged = 0;
+    }
+
     void Update()
     {
         if (DialogueBox.instance == null)

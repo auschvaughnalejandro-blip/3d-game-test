@@ -347,7 +347,8 @@ public class MainMenu : MonoBehaviour
 
         GUI.color = new Color(1f, 1f, 1f, 0.45f);
         GUI.Label(new Rect(0f, Screen.height - 42f, Screen.width, 22f),
-            "WASD move   -   mouse look   -   E speak   -   TAB change lens   -   ESC pause", smallStyle);
+            "WASD move   -   mouse look   -   E speak   -   V first person   -   "
+            + "TAB change lens   -   ESC pause", smallStyle);
         GUI.color = Color.white;
     }
 

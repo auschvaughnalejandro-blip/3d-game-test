@@ -35,6 +35,13 @@ public class HudDisplay : MonoBehaviour
     private static readonly Color SurgeChargingColour = new Color(0.58f, 0.38f, 0.92f);
     private static readonly Color SurgeActiveColour = new Color(0.85f, 0.55f, 1f);
 
+    // The three ailments. Bleeding is deliberately the same red family as the health bar
+    // it is draining, so the two read as connected rather than as two unrelated red
+    // things that happen to be near each other.
+    private static readonly Color BleedingColour = new Color(0.92f, 0.26f, 0.24f);
+    private static readonly Color StunnedColour = new Color(0.60f, 0.76f, 0.98f);
+    private static readonly Color WeakenedColour = new Color(0.68f, 0.88f, 0.38f);
+
     void Start()
     {
         GameObject playerObject = GameObject.FindWithTag("Player");
@@ -106,6 +113,7 @@ public class HudDisplay : MonoBehaviour
 
         DrawTheTwoBars();
         DrawTheSurgeMeter();
+        DrawTheAilments();
         DrawTheEssenceCount();
         DrawThePotions();
         DrawTheWeapon();
@@ -116,6 +124,7 @@ public class HudDisplay : MonoBehaviour
         DrawTheSpeakPrompt();
         DrawTheCrosshair();
         DrawTheBowDraw();
+        DrawTheQuiver();
         DrawTheNewWeaponName();
         DrawAnyBigMessage();
     }
@@ -229,6 +238,82 @@ public class HudDisplay : MonoBehaviour
         GUI.color = Color.white;
     }
 
+    // What the last creature to hit the player left behind, sitting under the three bars.
+    //
+    // This is not decoration. Health draining while nothing is attacking, a walk that has
+    // gone slow, and a sword that suddenly takes twice as many swings are three of the
+    // most convincing-looking bugs this game could have - and a player who cannot see a
+    // cause will read all three as broken rather than as an enemy having done something.
+    //
+    // Unlike the surge meter above it, this row IS allowed to appear and disappear. The
+    // surge bar is a thing the player has to learn to watch and so must always be in the
+    // same place; an ailment is an event, and an event that left a permanent empty slot
+    // on screen would be claiming the player is always about to bleed.
+    private void DrawTheAilments()
+    {
+        PlayerAilments ailments = PlayerAilments.instance;
+        if (ailments == null)
+        {
+            return;
+        }
+
+        // Left edge lines up with the three bars. Each chip is drawn in turn and moves
+        // the next one along, so one ailment sits on its own at the left rather than
+        // leaving gaps where the other two would have been.
+        float chipLeft = 34f;
+        float chipTop = 100f;
+
+        if (ailments.IsBleeding() == true)
+        {
+            chipLeft = DrawOneAilmentChip(chipLeft, chipTop, "BLEEDING",
+                ailments.BleedSecondsRemaining(), ailments.bleedLastsSeconds, BleedingColour);
+        }
+        if (ailments.IsStunned() == true)
+        {
+            chipLeft = DrawOneAilmentChip(chipLeft, chipTop, "STUNNED",
+                ailments.StunSecondsRemaining(), ailments.stunLastsSeconds, StunnedColour);
+        }
+        if (ailments.IsWeakened() == true)
+        {
+            chipLeft = DrawOneAilmentChip(chipLeft, chipTop, "WEAKENED",
+                ailments.WeakenSecondsRemaining(), ailments.weakenLastsSeconds, WeakenedColour);
+        }
+    }
+
+    // Returns where the NEXT chip should start, so the caller never has to do the sums.
+    private float DrawOneAilmentChip(float left, float top, string label,
+        float secondsLeft, float secondsTotal, Color colour)
+    {
+        float chipWidth = 104f;
+        float chipHeight = 18f;
+
+        // The chip drains left to right as the ailment runs out, so the player can see
+        // how long is left without reading the number.
+        float fractionLeft = 1f;
+        if (secondsTotal > 0f)
+        {
+            fractionLeft = secondsLeft / secondsTotal;
+        }
+
+        GUI.color = new Color(0f, 0f, 0f, 0.55f);
+        GUI.DrawTexture(new Rect(left - 2f, top - 2f, chipWidth + 4f, chipHeight + 4f), onePlainWhitePixel);
+
+        GUI.color = EmptyBarColour;
+        GUI.DrawTexture(new Rect(left, top, chipWidth, chipHeight), onePlainWhitePixel);
+
+        // Dimmed well down, because the label is written on top of it and a full-strength
+        // fill behind black-on-bright text is unreadable at this size.
+        GUI.color = new Color(colour.r, colour.g, colour.b, 0.45f);
+        GUI.DrawTexture(new Rect(left, top, chipWidth * fractionLeft, chipHeight), onePlainWhitePixel);
+
+        GUI.color = colour;
+        GUI.Label(new Rect(left + 6f, top + 1f, chipWidth, chipHeight), label, smallTextStyle);
+        GUI.color = Color.white;
+
+        // Eight pixels of gap, matched to the border drawn above.
+        return left + chipWidth + 8f;
+    }
+
     private void DrawTheEssenceCount()
     {
         if (GameDirector.instance == null)
@@ -250,7 +335,8 @@ public class HudDisplay : MonoBehaviour
             "WASD move   SHIFT sprint   SPACE jump   CTRL dodge   CLICK attack   HOLD CLICK heavy",
             smallTextStyle);
         GUI.Label(new Rect(34f, Screen.height - 62f, 900f, 24f),
-            "Q drink potion   F swap weapon (sword/hammer/bow)   TAB visual style   ESC pause",
+            "Q drink potion   F swap weapon (sword/hammer/bow)   V first person   "
+            + "TAB visual style   ESC pause",
             smallTextStyle);
         GUI.color = Color.white;
 
@@ -381,7 +467,20 @@ public class HudDisplay : MonoBehaviour
         GUI.color = new Color(0.10f, 0.08f, 0.12f);
         GUI.DrawTexture(new Rect(barLeft, barTop, barWidth, barHeight), onePlainWhitePixel);
 
+        // The bar itself turns bright while the Warden's core is open, because that is
+        // the only window in which arrows are worth firing.
+        //
+        // The armour is the least visible rule in the fight - an arrow that lands for a
+        // third of its damage looks exactly like an arrow that landed - so it has to be
+        // said somewhere the player is already looking. They watch this bar to see how
+        // the fight is going; it may as well also tell them when to shoot.
+        bool coreIsOpen = boss.CoreIsOpen();
+
         GUI.color = new Color(0.62f, 0.30f, 0.85f);
+        if (coreIsOpen == true)
+        {
+            GUI.color = new Color(1f, 0.72f, 0.30f);
+        }
         GUI.DrawTexture(new Rect(barLeft, barTop, barWidth * boss.HealthFraction(), barHeight),
             onePlainWhitePixel);
 
@@ -392,9 +491,18 @@ public class HudDisplay : MonoBehaviour
 
         GUIStyle centred = new GUIStyle(smallTextStyle);
         centred.alignment = TextAnchor.MiddleCenter;
+
+        string underTheBar = "THE WARDEN     PHASE " + boss.CurrentPhase();
         GUI.color = new Color(1f, 1f, 1f, 0.9f);
+
+        if (coreIsOpen == true)
+        {
+            underTheBar = underTheBar + "     CORE EXPOSED";
+            GUI.color = new Color(1f, 0.78f, 0.4f);
+        }
+
         GUI.Label(new Rect(0f, barTop + barHeight + 2f, Screen.width, 20f),
-            "THE WARDEN     PHASE " + boss.CurrentPhase(), centred);
+            underTheBar, centred);
         GUI.color = Color.white;
     }
 
@@ -568,6 +676,15 @@ public class HudDisplay : MonoBehaviour
         {
             return new Color(0.55f, 1f, 0.65f);
         }
+
+        // Below the minimum there is no shot at all, and the bar says so in red rather
+        // than in the same warm colour it uses for a weak but real draw. Those are two
+        // different facts and they must not look alike.
+        if (playerCombat != null && drawn < playerCombat.MinimumDrawToLoose())
+        {
+            return new Color(0.85f, 0.28f, 0.24f);
+        }
+
         return Color.Lerp(
             new Color(0.55f, 0.45f, 0.25f),
             new Color(1f, 0.92f, 0.55f),
@@ -579,6 +696,85 @@ public class HudDisplay : MonoBehaviour
     // Without this the weapon is unusable. Its whole design is that holding longer shoots
     // harder and flatter, and a player cannot make that trade if the only way to know how
     // far the string is back is to count in their head.
+    // How many arrows are left, and how long until they come back.
+    //
+    // Shown whenever the bow is in hand rather than only while drawing, because the count
+    // is what the player is meant to be PLANNING around. A number that only appears once
+    // the string is already back is a number that arrives too late to change the decision
+    // it exists to inform.
+    //
+    // Drawn as pips up to a point and as a bare number past it. Twenty pips is a row the
+    // eye has to count rather than read, which defeats the purpose - but four left out of
+    // twenty is exactly the situation where the count matters most, and a short row of
+    // marks reads instantly at a glance.
+    private void DrawTheQuiver()
+    {
+        if (playerCombat == null || playerCombat.RangedWeaponIsInHand() == false)
+        {
+            return;
+        }
+
+        PlayerQuiver quiver = playerCombat.Quiver();
+        if (quiver == null)
+        {
+            return;
+        }
+
+        int left = quiver.ArrowsLeft();
+        int full = quiver.ArrowsWhenFull();
+
+        float boxWidth = 190f;
+        float boxLeft = Screen.width * 0.5f - boxWidth * 0.5f;
+        float boxTop = Screen.height * 0.5f + 52f;
+
+        GUIStyle centred = new GUIStyle(smallTextStyle);
+        centred.alignment = TextAnchor.MiddleCenter;
+
+        // Amber as it gets low, red at empty. The colour is doing the same job the health
+        // bar's does - saying "this is becoming a problem" before it is one.
+        Color countColour = new Color(0.92f, 0.88f, 0.72f);
+        if (left == 0)
+        {
+            countColour = new Color(0.92f, 0.32f, 0.28f);
+        }
+        else if (left <= full / 4)
+        {
+            countColour = new Color(1f, 0.72f, 0.30f);
+        }
+
+        GUI.color = countColour;
+        GUI.Label(new Rect(0f, boxTop, Screen.width, 20f),
+            "ARROWS  " + left + " / " + full, centred);
+
+        // The refill clock, and only while it is actually running. A timer sitting at
+        // zero on a full quiver is a number that means nothing and still asks to be read.
+        float secondsLeft = quiver.SecondsUntilRefill();
+        if (secondsLeft > 0f)
+        {
+            GUI.color = new Color(1f, 1f, 1f, 0.75f);
+            GUI.Label(new Rect(0f, boxTop + 17f, Screen.width, 20f),
+                "refills in " + Mathf.CeilToInt(secondsLeft) + "s", centred);
+
+            // A thin bar under it, because a counting number tells the player how long is
+            // left but not how far through they are, and the second question is the one
+            // that decides whether to keep shooting or start swinging.
+            float barWidth = 120f;
+            float barLeft = Screen.width * 0.5f - barWidth * 0.5f;
+            float barTop = boxTop + 36f;
+            float howFarThrough = 1f - (secondsLeft / quiver.secondsToRefill);
+
+            GUI.color = new Color(0f, 0f, 0f, 0.5f);
+            GUI.DrawTexture(new Rect(barLeft - 1f, barTop - 1f, barWidth + 2f, 5f),
+                onePlainWhitePixel);
+
+            GUI.color = new Color(0.55f, 0.70f, 0.95f, 0.9f);
+            GUI.DrawTexture(new Rect(barLeft, barTop, barWidth * howFarThrough, 3f),
+                onePlainWhitePixel);
+        }
+
+        GUI.color = Color.white;
+    }
+
     private void DrawTheBowDraw()
     {
         if (playerCombat == null)
@@ -587,7 +783,13 @@ public class HudDisplay : MonoBehaviour
         }
 
         float drawn = playerCombat.DrawFraction();
-        if (drawn <= 0f)
+
+        // The bar is also shown, empty, while the last shot is still being recovered
+        // from with the button already held. Otherwise the player holds the button and
+        // nothing at all appears for a third of a second, which reads as the bow having
+        // stopped working rather than as a weapon that has not finished its last shot.
+        bool recovering = playerCombat.IsRecoveringWithTheBowHeld();
+        if (drawn <= 0f && recovering == false)
         {
             return;
         }
@@ -604,6 +806,19 @@ public class HudDisplay : MonoBehaviour
 
         GUI.color = ColourForDraw(drawn);
         GUI.DrawTexture(new Rect(left, top, width * drawn, 8f), onePlainWhitePixel);
+
+        // The notch where the shot becomes real. Everything left of it is a draw that
+        // will slip and lose the arrow, so the bar has to show where the line is rather
+        // than leaving the player to find it by failing.
+        float minimumDraw = playerCombat.MinimumDrawToLoose();
+        if (minimumDraw > 0f)
+        {
+            GUI.color = new Color(1f, 1f, 1f, 0.85f);
+            GUI.DrawTexture(
+                new Rect(left + width * minimumDraw - 1f, top - 2f, 2f, 12f),
+                onePlainWhitePixel);
+        }
+
         GUI.color = Color.white;
     }
 

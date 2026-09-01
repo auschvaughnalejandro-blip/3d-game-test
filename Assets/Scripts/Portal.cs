@@ -93,6 +93,29 @@ public class Portal : MonoBehaviour
         return hasCarriedThePlayer;
     }
 
+    // Put back the way it was found: buried, dark, and willing to carry somebody again.
+    //
+    // All three of these flags are one-way latches, which is right within a run and
+    // completely wrong across two of them. hasCarriedThePlayer is the one that matters.
+    // The game never reloads the scene, so without this a portal carries the player
+    // exactly once per launch: the second run walks into the arch and simply stands in
+    // it, with the arch lit and humming and nothing happening. There is no error, nothing
+    // in the log, and no way for the player to read it as anything but the game breaking.
+    public void ResetToClosed()
+    {
+        isOpen = false;
+        hasCarriedThePlayer = false;
+        openProgress = 0f;
+        passingSecondsLeft = 0f;
+
+        transform.position = buriedPosition;
+
+        if (ownLight != null)
+        {
+            ownLight.intensity = 0f;
+        }
+    }
+
     void Update()
     {
         if (isOpen == false)

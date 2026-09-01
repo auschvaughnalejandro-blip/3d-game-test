@@ -35,6 +35,15 @@ public class EnemyBrain : MonoBehaviour
 
     [Header("Identity")]
     public string displayName = "Grunt";
+
+    // Which set of creature sounds this body speaks with. "Grunt", "Darter", "Spitter"
+    // or "Warden" - GameSound.PlayCreature glues this to what just happened and asks
+    // for, say, "SpitterHurt".
+    //
+    // Separate from displayName on purpose. displayName is shown to the player and is
+    // free to be prose - the boss's is "The Warden" - and hanging file lookups off a
+    // string that exists to be read is how a rename silently turns a creature mute.
+    public string soundVoice = "Grunt";
     public bool isTheWarden = false;
     public int attackShape = AttackShapeSweep;
 
@@ -53,6 +62,31 @@ public class EnemyBrain : MonoBehaviour
     [Header("Movement")]
     public float moveSpeed = 2.4f;
     public float turningSpeed = 8f;
+
+    // How much of a hit's shove this creature actually takes, nought to one.
+    //
+    // Everything used to take the full seven metres a second, the Warden included, and
+    // that was quietly one of the worst problems in the boss fight. Each arrow shoved it
+    // roughly nine-tenths of a metre, and a bow fired fast enough pushed a creature that
+    // walks at 1.9 m/s backwards faster than it could walk forwards - so a player who
+    // kept shooting could never be reached at all. A four metre stone golem should not
+    // be moved by an arrow.
+    //
+    // Left at one for every ordinary creature, so nothing else in the game changes.
+    public float knockbackTaken = 1f;
+
+    // Killing this one builds no kill streak.
+    //
+    // Set on the creatures the Warden summons mid-fight, and set for a reason that was a
+    // real hole in the boss: killing summons fed the Surge, the Surge cuts attack timings
+    // to 1/1.8, and the player came out of it hitting far harder than before. Phase three
+    // was ARMING the player - the boss's own hardest move was the best thing that could
+    // happen to them. Summons are pressure now and nothing else.
+    public bool killingThisBuildsNoStreak = false;
+
+    // The boss script, when this creature happens to be the Warden. Null for everything
+    // else, and asked only when an arrow lands.
+    private WardenBoss theBossRidingAlong;
 
     [Header("Attack timing")]
     // How close it has to be before it will start an attack.
@@ -248,6 +282,12 @@ public class EnemyBrain : MonoBehaviour
             playerStats = playerObject.GetComponent<CharacterStats>();
         }
 
+        // Null on every ordinary creature, and that is the whole test for "is this the
+        // boss" as far as taking damage is concerned. Found in Start rather than Awake
+        // because ValleyBuilder adds WardenBoss after the brain, so an Awake lookup would
+        // reliably find nothing.
+        theBossRidingAlong = GetComponent<WardenBoss>();
+
         StartPathfindingIfPossible();
     }
 
@@ -310,6 +350,14 @@ public class EnemyBrain : MonoBehaviour
         if (attackCooldownRemaining > 0f)
         {
             attackCooldownRemaining = attackCooldownRemaining - Time.deltaTime;
+        }
+
+        // Another script is carrying this body this frame. Nothing below should move it,
+        // and nothing below should decide it has fallen out of the world either - it is
+        // deliberately in mid-air.
+        if (ordinaryMovementIsSuspended == true)
+        {
+            return;
         }
 
         RescueIfFallenOutOfTheWorld();
@@ -471,6 +519,13 @@ public class EnemyBrain : MonoBehaviour
         currentState = StateWindingUp;
         stateSecondsRemaining = windUpSeconds;
         damageDealtThisStrike = false;
+
+        // The creature announces itself BEFORE the blow, which is the whole point of a
+        // telegraph. Until now the wind-up was visual only, so an attack starting behind
+        // the player or off the edge of the screen had no tell at all and simply landed.
+        // Everything else about these attacks is built to be fair; this is what makes
+        // that fairness reach a player who is not looking at the attacker.
+        GameSound.PlayCreature(soundVoice, "WindUp", transform.position, 0.75f);
 
         if (attackShape == AttackShapeSlam && dangerRing != null)
         {
@@ -689,6 +744,18 @@ public class EnemyBrain : MonoBehaviour
         stateSecondsRemaining = strikeSeconds;
         damageDealtThisStrike = false;
 
+        // The effort of the blow leaving, which is a different sound from it landing.
+        // A ranged attacker is silent here - its noise belongs to the moment the rock
+        // is actually released, which is in ThrowARock, not to the start of the throw.
+        if (attackShape == AttackShapeSweep)
+        {
+            GameSound.PlayCreature(soundVoice, "Swing", transform.position, 0.55f);
+        }
+        else if (attackShape == AttackShapeLunge)
+        {
+            GameSound.PlayCreature(soundVoice, "Lunge", transform.position, 0.8f);
+        }
+
         if (attackShape == AttackShapeLunge)
         {
             // The direction is locked in HERE, at the moment the charge begins. From now
@@ -796,6 +863,12 @@ public class EnemyBrain : MonoBehaviour
         {
             theBlowConnected = distanceToPlayer <= slamRadius;
             FlashTheDangerRing();
+
+            // The slam lands whether or not it caught anybody - the ground was still
+            // hit. Tying this to theBlowConnected would make a dodged slam silent, and a
+            // move the player successfully escaped would give no confirmation that they
+            // had escaped anything.
+            GameSound.PlayCreature(soundVoice, "Impact", transform.position, 1f);
         }
         else if (attackShape == AttackShapeRanged)
         {
@@ -825,7 +898,7 @@ public class EnemyBrain : MonoBehaviour
         Vector3 aimAt = thePlayer.position + Vector3.up * 0.6f;
         Vector3 towards = aimAt - from;
 
-        GameSound.PlayAt("RockThrow", transform.position, 0.55f);
+        GameSound.PlayCreature(soundVoice, "Throw", transform.position, 0.7f);
         Projectile.Fire(from, towards, projectileSpeed, ownStats.attackDamage, gameObject);
     }
 
@@ -888,6 +961,16 @@ public class EnemyBrain : MonoBehaviour
         }
 
         playerStats.TakeDamage(ownStats.attackDamage);
+
+        // The mark this particular creature leaves behind - a Darter's bite bleeds, a
+        // Grunt's club staggers. Which one is decided inside PlayerAilments off this
+        // creature's displayName, so nothing here has to know what the effects are.
+        //
+        // Applied before the death check on purpose. If this blow killed the player the
+        // ailment is cleared a frame later anyway, and putting it after would mean a
+        // creature that lands a killing blow behaves differently from one that does not,
+        // for no reason a player could ever see.
+        PlayerAilments.ApplyForAttackerNamed(displayName);
 
         if (playerStats.isDead == true && GameDirector.instance != null)
         {
@@ -980,7 +1063,41 @@ public class EnemyBrain : MonoBehaviour
 
         // Only horizontal movement here. Falling is handled once per frame in
         // ApplyKnockbackAndGravity, so an enemy standing still still falls.
+        Vector3 beforeTheStep = transform.position;
         bodyController.Move(whereToStep * moveSpeed * Time.deltaTime);
+        CountOffTheFootfalls(transform.position - beforeTheStep);
+    }
+
+    // Footfalls, for the creatures heavy enough to earn them.
+    //
+    // Deliberately NOT every enemy. Thirteen creatures each placing footsteps turns a
+    // fight into a rainstorm and buries the sounds that carry information - the wind-ups.
+    // Only a body big enough that the ground would notice gets these, which at present
+    // means the Warden and nothing else.
+    private float metresSinceLastFootfall = 0f;
+
+    private void CountOffTheFootfalls(Vector3 movedThisFrame)
+    {
+        if (IsMadeOfStone() == false)
+        {
+            return;
+        }
+
+        Vector3 alongTheGround = movedThisFrame;
+        alongTheGround.y = 0f;
+
+        metresSinceLastFootfall = metresSinceLastFootfall + alongTheGround.magnitude;
+
+        // A far longer stride than the player's 0.91 m, because it is a far bigger
+        // creature. Hearing the Warden walk is also a warning in its own right - it is
+        // the only enemy the player is expected to keep track of without looking.
+        if (metresSinceLastFootfall < 1.9f)
+        {
+            return;
+        }
+
+        metresSinceLastFootfall = 0f;
+        GameSound.PlayCreature(soundVoice, "Step", transform.position, 0.7f);
     }
 
     // Which way to walk to get closer to the player, going around anything in the way.
@@ -1476,6 +1593,31 @@ public class EnemyBrain : MonoBehaviour
         return true;
     }
 
+    // Set while another script is carrying this body itself - so far only the Warden's
+    // leap, which flies it along an arc of its own.
+    //
+    // While it is true this brain applies neither gravity nor its own chase movement.
+    // Without it the two fight: gravity accumulates at 22 m/s squared the moment the body
+    // leaves the ground, and over a two-thirds of a second flight that drags it several
+    // metres back down through its own arc. A seven metre leap comes out as a stumble,
+    // and it looks like the jump animation being wrong rather than like two scripts
+    // moving the same CharacterController in the same frame.
+    private bool ordinaryMovementIsSuspended = false;
+
+    public void SuspendOrdinaryMovement(bool suspended)
+    {
+        ordinaryMovementIsSuspended = suspended;
+
+        if (suspended == true)
+        {
+            // Cleared rather than left to accumulate. Whatever downward speed had built
+            // up before the leap would otherwise be waiting to be applied all at once the
+            // moment the body was handed back.
+            verticalSpeed = 0f;
+            knockbackVelocity = Vector3.zero;
+        }
+    }
+
     private void ApplyKnockbackAndGravity()
     {
         if (bodyController.isGrounded == true)
@@ -1504,7 +1646,20 @@ public class EnemyBrain : MonoBehaviour
     // Being hit, and dying
     // ------------------------------------------------------------------------
 
+    // The ordinary way in - a swing. Everything that hit an enemy before this file grew
+    // a boss still calls exactly this and behaves exactly as it did.
     public void ReceiveHitFromPlayer(float damageAmount, Vector3 cameFromPosition)
+    {
+        ReceiveHitFromPlayer(damageAmount, cameFromPosition, false);
+    }
+
+    // The same, but saying whether it was shot from a distance rather than swung.
+    //
+    // Only the Warden cares, and only about arrows: it is armoured against them except
+    // while it is committed to one of its own moves. Melee deliberately does not carry
+    // that penalty - closing to five metres with a boss that leaps, charges and slams is
+    // the risk, and the damage is what it is paid for.
+    public void ReceiveHitFromPlayer(float damageAmount, Vector3 cameFromPosition, bool shotFromRange)
     {
         if (ownStats.isDead == true)
         {
@@ -1515,16 +1670,68 @@ public class EnemyBrain : MonoBehaviour
         // picked off from safety without consequence.
         hasBeenProvoked = true;
 
+        if (shotFromRange == true && theBossRidingAlong != null)
+        {
+            damageAmount = damageAmount * theBossRidingAlong.HowMuchOfAnArrowLands();
+        }
+
         bool thisWasTheKillingBlow = ownStats.TakeDamage(damageAmount);
+
+        // The sound of the blow landing is decided HERE rather than by whoever swung,
+        // and that is deliberate. What a hit sounds like depends on what was hit - a
+        // sword into a Darter and the same sword into four tonnes of Warden are not the
+        // same event - and this is the only place that knows both the material and
+        // whether the creature survived. PlayerCombat and Arrow used to each play their
+        // own "HitEnemy" and neither could have known either fact.
+        string whatItIsMadeOf = "Flesh";
+        if (IsMadeOfStone() == true)
+        {
+            whatItIsMadeOf = "Stone";
+        }
+
+        string whatStruckIt = "Hit";
+        if (shotFromRange == true)
+        {
+            whatStruckIt = "ArrowHit";
+        }
+
+        if (thisWasTheKillingBlow == true)
+        {
+            // The kill is the ordinary impact with something laid over it, not a
+            // different sound. Swapping the impact out entirely on the last hit makes
+            // the killing blow feel like it came from another weapon.
+            GameSound.PlayWithAccent(whatStruckIt + whatItIsMadeOf, "KillingBlow",
+                transform.position, 0.85f, 0.6f);
+        }
+        else
+        {
+            GameSound.PlayAt(whatStruckIt + whatItIsMadeOf, transform.position, 0.8f);
+        }
+
+        // It cries out only if it survived. The death sound already opens with the
+        // creature's voice, and playing both on the killing blow doubles the voice over
+        // itself and turns the kill into mush - which is what CharacterStats has always
+        // said about the player, and it is just as true here.
+        if (thisWasTheKillingBlow == false)
+        {
+            GameSound.PlayCreature(soundVoice, "Hurt", transform.position, 0.7f);
+        }
 
         Vector3 shoveDirection = transform.position - cameFromPosition;
         shoveDirection.y = 0f;
-        knockbackVelocity = shoveDirection.normalized * 7f;
+        knockbackVelocity = shoveDirection.normalized * 7f * knockbackTaken;
 
         if (thisWasTheKillingBlow == true)
         {
             Die();
         }
+    }
+
+    // What this creature is made of, for the sound of hitting it. The Warden is the only
+    // thing in the game built out of rock; everything else bleeds.
+    public bool IsMadeOfStone()
+    {
+        return soundVoice == "Warden";
     }
 
     private void Die()
@@ -1538,7 +1745,10 @@ public class EnemyBrain : MonoBehaviour
         hasAlreadyDied = true;
 
         ReturnToRestingPose();
-        GameSound.PlayAt("EnemyDeath", transform.position, 0.75f);
+
+        // Every creature used to die on the same two clips, so a 3.65 m stone Warden
+        // and a Darter made an identical noise going down.
+        GameSound.PlayCreature(soundVoice, "Death", transform.position, 0.85f);
 
         DeathBurst.SpawnAt(
             transform.position,

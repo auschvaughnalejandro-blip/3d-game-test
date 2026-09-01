@@ -90,6 +90,15 @@ public class EndingSequence : MonoBehaviour
         {
             isRolling = true;
             secondsRolling = 0f;
+
+            // The last shot of the game is the player walking away up the road, so it has
+            // to be taken from behind them. A player who happened to finish the run in
+            // first person would otherwise get the pull-back below applied to a camera
+            // that has no distance to pull back through, and see nothing at all.
+            if (theCamera != null)
+            {
+                theCamera.ReturnToThirdPerson();
+            }
         }
     }
 

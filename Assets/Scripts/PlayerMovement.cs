@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 // Walking, sprinting and the dodge-roll.
 // The dodge is the important one: it costs stamina, and stamina is the only thing
@@ -38,6 +38,9 @@ public class PlayerMovement : MonoBehaviour
     private CharacterController bodyController;
     private CharacterStats ownStats;
     private OrbitCamera theCamera;
+
+    // Asked once a frame whether the bow is drawn, which slows the player right down.
+    private PlayerCombat ownCombat;
 
     private float verticalSpeed = 0f;
     private float dodgeSecondsRemaining = 0f;
@@ -121,6 +124,7 @@ public class PlayerMovement : MonoBehaviour
         bodyController = GetComponent<CharacterController>();
         ownStats = GetComponent<CharacterStats>();
         theCamera = Camera.main.GetComponent<OrbitCamera>();
+        ownCombat = GetComponent<PlayerCombat>();
     }
 
     void Update()
@@ -198,10 +202,30 @@ public class PlayerMovement : MonoBehaviour
         }
 
         bool isSprinting = GameInput.SprintIsHeld() && desiredDirection.sqrMagnitude > 0.01f;
+
+        // Aiming costs speed, and sprinting with the string back is refused outright.
+        //
+        // This is the other half of the bow fix, and it is the half that changes how the
+        // fights feel rather than how the arithmetic works. A player who can sprint at
+        // 8.5 metres a second while holding a full draw can walk backwards away from
+        // every creature in the game - the Warden chases at 1.9 - and shoot it to death
+        // without ever being in reach of anything. Aiming has to mean standing still
+        // enough to be worth hitting.
+        bool isDrawingABow = ownCombat != null && ownCombat.IsDrawingABow() == true;
+        if (isDrawingABow == true)
+        {
+            isSprinting = false;
+        }
+
         float speedThisFrame = walkingSpeed;
         if (isSprinting == true)
         {
             speedThisFrame = sprintingSpeed;
+        }
+
+        if (isDrawingABow == true)
+        {
+            speedThisFrame = speedThisFrame * ownCombat.MovementWhileDrawing();
         }
 
         // A kill streak makes the player faster on foot. It is applied to walking and
@@ -209,6 +233,13 @@ public class PlayerMovement : MonoBehaviour
         // against the reach of all three enemy attack shapes, and a longer one would
         // quietly break the timing of every fight in the game.
         speedThisFrame = speedThisFrame * PlayerSurge.MovementSpeedMultiplierNow();
+
+        // And a Grunt's club makes them slower. Applied to walking and sprinting only,
+        // for exactly the reason given above - the dodge is tuned against the reach of
+        // every attack shape in the game and must keep its distance whatever else is
+        // happening to the player. A stun that shortened the roll would make the one
+        // answer to a Grunt stop working at the moment the Grunt landed a hit.
+        speedThisFrame = speedThisFrame * PlayerAilments.MovementSpeedMultiplierNow();
 
         ApplyGravity();
 
@@ -220,9 +251,71 @@ public class PlayerMovement : MonoBehaviour
 
         Vector3 movementThisFrame = desiredDirection * speedThisFrame;
         movementThisFrame.y = verticalSpeed;
-        bodyController.Move(movementThisFrame * Time.deltaTime);
 
-        TurnToFaceDirectionOfTravel(desiredDirection);
+        // Measured from where the controller ACTUALLY ended up, not from what it was
+        // asked to do. Walking into a wall asks for full speed and travels nowhere, and
+        // the intended figure would have the player jogging on the spot against it.
+        Vector3 beforeTheMove = transform.position;
+        bodyController.Move(movementThisFrame * Time.deltaTime);
+        CountOffTheFootsteps(transform.position - beforeTheMove);
+
+        // An archer faces the shot, not the walk.
+        //
+        // Without this the body keeps turning to wherever it last moved while the arrow
+        // still flies wherever the camera points, so a player who strafes while aiming
+        // ends up shooting out of their own shoulder. It never showed before the draw was
+        // animated because there was no drawn bow on screen to be pointing the wrong way.
+        //
+        // It also changes how aiming plays, and deliberately: the player now turns on the
+        // spot to track a target while drawn, which is what makes a bow feel aimed rather
+        // than merely fired. The speed penalty for drawing is what keeps that from being
+        // free.
+        //
+        // In first person the view wins outright, ahead of both of those. The camera is
+        // sitting in the player's head, so wherever it points IS where the player is
+        // facing - there is no other reading of it available.
+        if (theCamera.IsFirstPerson() == true)
+        {
+            TurnToFaceTheView();
+        }
+        else if (isDrawingABow == true)
+        {
+            TurnToFaceTheShot();
+        }
+        else
+        {
+            TurnToFaceDirectionOfTravel(desiredDirection);
+        }
+    }
+
+    // Snapped rather than eased, which is the one place in this script that does not
+    // slerp towards where it is going.
+    //
+    // The turning speed exists so a body seen from behind does not spin on the spot like
+    // a compass needle, and there is no body seen from behind here. What there is instead
+    // is an arm holding a sword, hanging off that body a few centimetres in front of the
+    // lens: ease the rotation and the weapon lags a fifth of a second behind every mouse
+    // movement, which reads as the weapon being loose rather than the turn being smooth.
+    // The melee arc is centred on transform.forward as well, so a lagging body would also
+    // mean swinging at where the player was looking a moment ago.
+    private void TurnToFaceTheView()
+    {
+        transform.rotation = Quaternion.Euler(0f, theCamera.CurrentYawDegrees(), 0f);
+    }
+
+    // Flattened, because the body turns but does not lean. Elevation is the arrow's
+    // business and is solved where the shot is.
+    private void TurnToFaceTheShot()
+    {
+        if (ownCombat == null)
+        {
+            return;
+        }
+
+        Vector3 alongTheShot = ownCombat.AimDirection();
+        alongTheShot.y = 0f;
+
+        TurnToFaceDirectionOfTravel(alongTheShot);
     }
 
     // Holds the player on top of the floor, and puts them back if they ever get off it.
@@ -313,6 +406,52 @@ public class PlayerMovement : MonoBehaviour
         }
     }
 
+    // ------------------------------------------------------------------------
+    // Footsteps
+    //
+    // Four Footstep clips have shipped in Resources/Audio since the first commit and
+    // not one of them has ever been played - there was no call site anywhere in the
+    // project. The player has been walking around in complete silence.
+    //
+    // Measured in DISTANCE rather than in time, for the same reason ProceduralAnimator
+    // advances its stride that way: walk twice as fast and you take twice as many steps
+    // over the same ground, not longer ones. Driving these off a timer instead is what
+    // makes footsteps slide out of step with the legs the moment the speed changes.
+    // ------------------------------------------------------------------------
+
+    // ProceduralAnimator poses 0.55 strides per metre, and a stride is two footfalls, so
+    // a foot lands every 1 / (0.55 * 2) metres. Taken from the same number the legs use
+    // so the sound and the visible step stay together.
+    private const float MetresBetweenFootfalls = 0.909f;
+
+    private float metresSinceLastFootfall = 0f;
+
+    private void CountOffTheFootsteps(Vector3 movedThisFrame)
+    {
+        // Feet in the air make no noise, and neither does being shoved sideways while
+        // dead or stunned.
+        if (bodyController.isGrounded == false || isAirborne == true)
+        {
+            return;
+        }
+
+        // Only ground covered counts. Falling down a slope is not walking, and without
+        // throwing the vertical part away a player sliding down the valley wall breaks
+        // into a sprint of footsteps while standing still.
+        Vector3 alongTheGround = movedThisFrame;
+        alongTheGround.y = 0f;
+
+        metresSinceLastFootfall = metresSinceLastFootfall + alongTheGround.magnitude;
+
+        if (metresSinceLastFootfall < MetresBetweenFootfalls)
+        {
+            return;
+        }
+
+        metresSinceLastFootfall = 0f;
+        GameSound.Play("Footstep", 0.5f);
+    }
+
     private void TurnToFaceDirectionOfTravel(Vector3 desiredDirection)
     {
         if (desiredDirection.sqrMagnitude < 0.01f)
@@ -336,6 +475,18 @@ public class PlayerMovement : MonoBehaviour
             // the upward push has actually gone.
             if (verticalSpeed <= 0f)
             {
+                if (isAirborne == true)
+                {
+                    // The moment of arrival. Jumping has always had a sound and landing
+                    // never did, so a jump ended by simply going quiet.
+                    GameSound.Play("PlayerLand", 0.6f);
+
+                    // A landing is a footfall. Without this the very next step comes
+                    // wherever the counter happened to be left when the feet left the
+                    // ground, which lands one step almost on top of the touchdown.
+                    metresSinceLastFootfall = 0f;
+                }
+
                 isAirborne = false;
 
                 // A small downward push rather than zero keeps the controller pressed

@@ -1,4 +1,23 @@
-using UnityEngine;
+﻿using UnityEngine;
+
+// What a swing of a weapon LOOKS like.
+//
+// Gameplay does not read this at all - the damage, reach, arc and cooldown are separate
+// numbers and none of them are decided here. It exists so that the body knows which shape
+// to make, exactly the way modelPartName says which mesh to show and weaponName picks the
+// sound. A fourth weapon added later names its shape and animates without ProceduralAnimator
+// knowing it exists.
+public enum SwingShape
+{
+    // Straight down the line, elbow-driven. The sword.
+    Stab,
+
+    // Up over the shoulder and down with the whole body behind it. The hammer.
+    Smash,
+
+    // Flat and horizontal, the body turning underneath a held arm. The Warden's Edge.
+    Sweep,
+}
 
 // One weapon, as pure data. No behaviour at all - the same trick the enemies use, where
 // a Grunt and a Darter are one script separated only by numbers.
@@ -27,12 +46,36 @@ public class WeaponKind
     // The piece of the player model this weapon shows. Everything else is hidden.
     public string modelPartName = "Sword";
 
+    // Which of the three swing shapes this weapon makes. See SwingShape above.
+    public SwingShape swingShape = SwingShape.Stab;
+
     // A ranged weapon is not swung. It is drawn, held, and loosed - and the longer it is
     // drawn the harder it hits and the flatter it flies.
     public bool isRanged = false;
     public float secondsToFullDraw = 1.4f;
     public float arrowSpeedAtFullDraw = 42f;
     public float arrowSpeedAtNoDraw = 16f;
+
+    // How far back the string has to be before there is a shot at all. Under this the
+    // draw is abandoned and no arrow leaves.
+    //
+    // This exists because the bow used to be at its most dangerous when tapped. The
+    // recovery was a flat cost paid per SHOT while the draw was free, so firing at the
+    // fastest the recovery allowed beat aiming by a wide margin - the exact opposite of
+    // what a bow is meant to be. A floor under the draw is what removes the tap as a
+    // move at all, rather than merely making it weak enough to ignore.
+    public float minimumDrawToLoose = 0.35f;
+
+    // Stamina burned per second while the string is held back. The bow was the one
+    // weapon in the game outside the stamina economy - no cost to fire, no ammunition,
+    // and no competition with the dodge for the same pool. Holding an aim is now a bet
+    // against being able to roll out of what is coming.
+    public float staminaPerSecondDrawing = 12f;
+
+    // What is left of the player's speed while aiming. Sprinting is refused outright.
+    // Without this the player can run backwards faster than anything in the game can
+    // follow while holding a full draw, which is the whole of the kiting problem.
+    public float movementWhileDrawing = 0.45f;
 }
 
 // The two weapons the player carries, and which one is in hand.
@@ -110,6 +153,11 @@ public class PlayerWeapons : MonoBehaviour
         sword.knockback = 7f;
         sword.modelPartName = "Sword";
 
+        // A point, used as a point. The sword is the fast weapon, and a thrust is the
+        // fastest thing a blade can do - there is no arc to travel through, so the
+        // animation is as quick as the cooldown says the weapon is.
+        sword.swingShape = SwingShape.Stab;
+
         hammer.weaponName = "HAMMER";
         hammer.damage = 44f;
         // More than twice the sword's cooldown. The hammer is not a strict upgrade; it is
@@ -122,6 +170,11 @@ public class PlayerWeapons : MonoBehaviour
         hammer.heavyStaminaCost = 32f;
         hammer.knockback = 16f;
         hammer.modelPartName = "Hammer";
+
+        // Up and down with the whole body behind it. The hammer's case is that it is a
+        // bet on a long opening, and a blow that visibly takes a moment to raise is the
+        // animation making that bet legible.
+        hammer.swingShape = SwingShape.Smash;
 
         // The answer to the Spitters on the shoulders, who until now could shoot down at
         // the player with nothing that could reach back. Slow enough that using it in a
@@ -141,6 +194,13 @@ public class PlayerWeapons : MonoBehaviour
         bow.secondsToFullDraw = 1.4f;
         bow.arrowSpeedAtFullDraw = 42f;
         bow.arrowSpeedAtNoDraw = 16f;
+        bow.minimumDrawToLoose = 0.35f;
+        bow.staminaPerSecondDrawing = 12f;
+        bow.movementWhileDrawing = 0.45f;
+
+        // Never used - a bow is loosed, not swung - but left sensible rather than at
+        // whatever the default happens to be, the same as swingArcDegrees below.
+        bow.swingShape = SwingShape.Stab;
 
         // The three starting weapons all swing forwards. Roughly a right angle: wide
         // enough to catch a target that has stepped off the centre line, narrow enough
@@ -168,6 +228,13 @@ public class PlayerWeapons : MonoBehaviour
         wardensEdge.heavyStaminaCost = 24f;
         wardensEdge.knockback = 13f;
         wardensEdge.modelPartName = "Edge";
+
+        // Flat and all the way round. This is the one weapon whose animation is carrying
+        // a gameplay fact rather than decorating one: the arc really is 200 degrees, and
+        // 360 on a heavy, so the body really does have to turn through it. A wheeling
+        // overhead swing on a weapon that hits everything behind you would be the
+        // animation lying about the reach.
+        wardensEdge.swingShape = SwingShape.Sweep;
     }
 
     // The heavy swing of the Edge goes all the way round. Read by PlayerCombat, which
@@ -189,6 +256,17 @@ public class PlayerWeapons : MonoBehaviour
     public bool TheEdgeHasBeenWon()
     {
         return theEdgeHasBeenWon;
+    }
+
+    // Taken back off the player when a run is reset. The Edge is the reward for killing
+    // the Warden, and a fresh run that begins with it already in hand has given its own
+    // ending away in the first ten seconds.
+    public void RelockTheWardensEdge()
+    {
+        theEdgeHasBeenWon = false;
+        weaponInHand = 0;
+        announceSecondsRemaining = 0f;
+        ShowOnlyTheWeaponInHand();
     }
 
     private GameObject[] FindPartsNamed(string startsWith)

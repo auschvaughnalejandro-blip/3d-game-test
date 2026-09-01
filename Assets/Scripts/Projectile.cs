@@ -24,10 +24,21 @@ public class Projectile : MonoBehaviour
     private bool hasLanded = false;
 
     private Transform thePlayer;
+
+    // Whether this rock has already announced passing the player. See the near miss
+    // below - it is a one-shot, not a state.
+    private bool hasWhistledPast = false;
     private CharacterStats playerStats;
 
     // Who fired it, so it cannot immediately shoot itself in the back.
     private GameObject whoFiredIt;
+
+    // The thrower's displayName, remembered as TEXT at the moment of firing rather than
+    // read off the thrower when the rock lands. A rock is in the air for the best part of
+    // a second and the creature that threw it is very often shot dead during that second,
+    // which leaves whoFiredIt pointing at a destroyed object. Copying the name at launch
+    // means a Spitter's last rock still lands as a Spitter's rock.
+    private string firedByName = "";
 
     void Start()
     {
@@ -87,6 +98,19 @@ public class Projectile : MonoBehaviour
                 StopOn(thePlayer.gameObject);
                 return;
             }
+
+            // Close, but not close enough to hit. A near miss said nothing at all
+            // before, so a dodge that worked and a rock that was never going to land
+            // felt identical - the player got no confirmation that their sidestep was
+            // what saved them.
+            //
+            // Announced once per rock. Without the flag this fires every frame the rock
+            // spends inside the radius, which at 14 m/s is a burst of about a dozen.
+            if (hasWhistledPast == false && toPlayer.magnitude < 2.6f)
+            {
+                hasWhistledPast = true;
+                GameSound.Play("ArrowFlyBy", 0.5f);
+            }
         }
 
         // Spin, purely so it reads as a tumbling rock rather than a sliding ball.
@@ -100,6 +124,11 @@ public class Projectile : MonoBehaviour
         if (whatWasHit.CompareTag("Player") == true && playerStats != null)
         {
             playerStats.TakeDamage(damage);
+
+            // A Spitter's rock leaves the player weakened. The Warden throws rocks out of
+            // this same script during its volley, and it leaves nothing - which is handled
+            // by PlayerAilments simply not naming it, rather than by a check here.
+            PlayerAilments.ApplyForAttackerNamed(firedByName);
 
             if (playerStats.isDead == true && GameDirector.instance != null)
             {
@@ -143,5 +172,15 @@ public class Projectile : MonoBehaviour
         flying.speed = speed;
         flying.damage = damage;
         flying.whoFiredIt = firedBy;
+
+        // Read here, once, while the thrower is certainly still alive.
+        if (firedBy != null)
+        {
+            EnemyBrain throwerBrain = firedBy.GetComponent<EnemyBrain>();
+            if (throwerBrain != null)
+            {
+                flying.firedByName = throwerBrain.displayName;
+            }
+        }
     }
 }

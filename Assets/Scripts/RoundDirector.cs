@@ -200,6 +200,51 @@ public class RoundDirector : MonoBehaviour
         phase = PhaseFinished;
     }
 
+    // Put the arena back to the state it is in when the game first boots: empty, sealed,
+    // no cover raised, no round being fought, waiting to be sent for by the story.
+    //
+    // This is what New Game was missing. Nothing in here is written to disk and nothing
+    // in here is rebuilt when a run starts, so a second run inherited the first one's
+    // round number, its live enemies, its raised barriers and its smashed cover - and the
+    // first thing the player saw was a HUD counting enemies they had never met.
+    public void ResetForANewRun()
+    {
+        EnsureRoundsBuilt();
+
+        RemoveEveryEnemy();
+
+        currentRound = 0;
+        allRoundsCleared = false;
+        spawnedThisRound = 0;
+        secondWaveSent = false;
+        phaseSecondsRemaining = 0f;
+
+        HideAllPillars();
+        if (narrowsBarrier != null)
+        {
+            narrowsBarrier.SnapTo(false);
+        }
+        if (hollowBarrier != null)
+        {
+            hollowBarrier.SnapTo(false);
+        }
+
+        // Held for the story again, exactly the way Start leaves it. Getting this one
+        // line wrong is silent and looks nothing like its cause: BeginTheFirstRound does
+        // nothing unless the phase is PhaseHeldByTheStory, so a phase carried over from
+        // the last run means walking up out of the dungeon starts no round at all, and
+        // whatever round the last run died on simply carries on underneath.
+        if (Object.FindFirstObjectByType<StoryDirector>() != null)
+        {
+            phase = PhaseHeldByTheStory;
+        }
+        else
+        {
+            phase = PhaseWaitingToStart;
+            phaseSecondsRemaining = secondsBeforeFirstRound;
+        }
+    }
+
     // The name of a round, counting from one. Used on the Continue button so it says
     // where the player was rather than just offering to carry on.
     public string RoundName(int roundNumber)
@@ -365,6 +410,30 @@ public class RoundDirector : MonoBehaviour
         {
             playerHealing.RefillAllCharges();
         }
+
+        // And the quiver, for exactly the same reason. Twenty arrows is a decision about
+        // how to spend a minute; carrying an empty quiver into a fresh round would make
+        // it a decision about how to spend the whole run, and the player would have no
+        // way to see that they had started a round already out of ammunition.
+        //
+        // It also matters on a checkpoint reload, which comes through here: dying with
+        // two arrows left and reloading into two arrows left would quietly make a hard
+        // retry harder every time it was attempted.
+        // Looked up here rather than cached alongside the others at startup. GameDirector
+        // is what ADDS this component to a player that was serialised into the scene
+        // without one, and the order two scripts run their Start in is not defined - so a
+        // reference taken at startup is null on exactly the runs where GameDirector went
+        // second, and the quiver would then never refill on those runs and only those.
+        // Once per round is not a lookup worth caching to get wrong.
+        if (playerObject != null)
+        {
+            PlayerQuiver quiver = playerObject.GetComponent<PlayerQuiver>();
+            if (quiver != null)
+            {
+                quiver.RefillNow();
+            }
+        }
+
         if (playerStats != null)
         {
             playerStats.currentStamina = playerStats.maximumStamina;
@@ -503,6 +572,11 @@ public class RoundDirector : MonoBehaviour
         {
             playerStats.RestoreEverything();
         }
+
+        // Health and stamina come back, so the bleeding has to go. Restarting a round
+        // still carrying a wound from the attempt before it would be the round starting
+        // already lost.
+        PlayerAilments.ClearEverythingNow();
         if (playerMovement != null)
         {
             playerMovement.TeleportTo(StartingPointForZone(rounds[currentRound - 1].zone));
@@ -513,13 +587,19 @@ public class RoundDirector : MonoBehaviour
 
     private void RemoveEveryEnemy()
     {
+        // Swept by type rather than walked down the tracked list, because the tracked
+        // list is the one thing guaranteed NOT to know about the enemies that need
+        // removing. StartRound empties it without destroying anything, so any round that
+        // was interrupted - by dying, by loading a checkpoint, by starting a new run -
+        // leaves its enemies alive in the valley and owned by nobody. Those orphans are
+        // what a "new" game used to open with, and the enemy counter on the HUD was
+        // reporting them perfectly accurately.
+        EnemyBrain[] everyEnemy = Object.FindObjectsByType<EnemyBrain>(
+            FindObjectsInactive.Include, FindObjectsSortMode.None);
         int index = 0;
-        while (index < aliveThisRound.Count)
+        while (index < everyEnemy.Length)
         {
-            if (aliveThisRound[index] != null)
-            {
-                Object.Destroy(aliveThisRound[index].gameObject);
-            }
+            Object.Destroy(everyEnemy[index].gameObject);
             index = index + 1;
         }
         aliveThisRound.Clear();
@@ -610,23 +690,24 @@ public class RoundDirector : MonoBehaviour
         }
     }
 
+    // Every pillar in the game, the Vault's included - which the older version of this
+    // missed, so cover smashed during the boss fight stayed smashed for the rest of the
+    // session.
     private void HideAllPillars()
     {
+        RestorePillars(narrowsPillars);
+        RestorePillars(hollowPillars);
+        RestorePillars(vaultPillars);
+    }
+
+    private void RestorePillars(List<Pillar> pillars)
+    {
         int index = 0;
-        while (index < narrowsPillars.Count)
+        while (index < pillars.Count)
         {
-            if (narrowsPillars[index] != null)
+            if (pillars[index] != null)
             {
-                narrowsPillars[index].HideImmediately();
-            }
-            index = index + 1;
-        }
-        index = 0;
-        while (index < hollowPillars.Count)
-        {
-            if (hollowPillars[index] != null)
-            {
-                hollowPillars[index].HideImmediately();
+                pillars[index].RestoreForANewRun();
             }
             index = index + 1;
         }

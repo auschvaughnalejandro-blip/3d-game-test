@@ -159,8 +159,14 @@ public class Arrow : MonoBehaviour
                 CharacterStats stats = what.GetComponent<CharacterStats>();
                 if (stats != null && stats.isDead == false)
                 {
-                    enemy.ReceiveHitFromPlayer(damage, transform.position);
-                    GameSound.PlayAt("HitEnemy", transform.position, 0.8f);
+                    // Told that it came from range. Only the Warden does anything with
+                    // that, and what it does is armour itself against arrows except
+                    // while it is committed to a move of its own.
+                    // The impact sound belongs to the creature that was hit, not to the
+                    // arrow - it is the one that knows whether it is meat or stone, and
+                    // whether that was the last hit it could take. ReceiveHitFromPlayer
+                    // has already made that noise by the time this line is reached.
+                    enemy.ReceiveHitFromPlayer(damage, transform.position, true);
                     Destroy(gameObject);
                     return true;
                 }
@@ -170,8 +176,9 @@ public class Arrow : MonoBehaviour
             }
 
             // Anything else solid stops it dead. Scenery is what makes an arrow a
-            // decision rather than a guaranteed hit.
-            GameSound.PlayAt("RockImpact", transform.position, 0.4f);
+            // decision rather than a guaranteed hit - so the miss has its own small,
+            // sharp sound rather than borrowing the one a thrown boulder makes.
+            GameSound.PlayAt("ArrowHitStone", transform.position, 0.55f);
             Destroy(gameObject);
             return true;
         }

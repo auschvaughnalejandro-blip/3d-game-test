@@ -75,7 +75,7 @@ public class WardenGem : MonoBehaviour
         hasBeenTaken = true;
         secondsSinceTaken = 0f;
 
-        GameSound.Play("PortalOpen", 0.75f);
+        GameSound.Play("GemShatter", 0.85f);
 
         PlayerWeapons weapons = player.GetComponent<PlayerWeapons>();
         if (weapons != null)

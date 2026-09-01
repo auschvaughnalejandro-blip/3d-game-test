@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections.Generic;
 using UnityEngine.AI;
 using Unity.AI.Navigation;
@@ -632,10 +632,19 @@ public static class ValleyBuilder
         // freshly built player should carry it from the start like every other script.
         player.AddComponent<PlayerSurge>();
 
+        // The bleeding, the stagger and the weakness that the three creatures leave
+        // behind. Added here and in GameDirector for the same reason the surge meter is.
+        player.AddComponent<PlayerAilments>();
+
         // Reads all of the above once a frame and drives the limbs from it. Without this
         // the player walks and does nothing else - every dodge, swing, jump, drink and
         // hit lands with the body completely still.
         player.AddComponent<PlayerAnimator>();
+
+        // The shaft that sits on the drawn bow and slides back with the pull. Separate
+        // from the animator because it moves a prop rather than a limb, and because the
+        // bow mesh is welded solid and cannot hold an arrow of its own - see NockedArrow.
+        player.AddComponent<NockedArrow>();
 
         return player;
     }
@@ -1532,6 +1541,7 @@ public static class ValleyBuilder
 
         EnemyBrain brain = grunt.GetComponent<EnemyBrain>();
         brain.displayName = "Grunt";
+        brain.soundVoice = "Grunt";
         brain.attackShape = EnemyBrain.AttackShapeSweep;
         brain.detectionRadius = 13f;
         brain.loseInterestRadius = 20f;
@@ -1571,6 +1581,7 @@ public static class ValleyBuilder
 
         EnemyBrain brain = darter.GetComponent<EnemyBrain>();
         brain.displayName = "Darter";
+        brain.soundVoice = "Darter";
         brain.attackShape = EnemyBrain.AttackShapeLunge;
         brain.detectionRadius = 17f;
         brain.loseInterestRadius = 26f;
@@ -1627,6 +1638,7 @@ public static class ValleyBuilder
 
         EnemyBrain brain = warden.GetComponent<EnemyBrain>();
         brain.displayName = "The Warden";
+        brain.soundVoice = "Warden";
         brain.attackShape = EnemyBrain.AttackShapeSlam;
         brain.detectionRadius = 20f;
         brain.loseInterestRadius = 45f;
@@ -1642,6 +1654,12 @@ public static class ValleyBuilder
         brain.retreatsAfterAttacking = false;
         brain.isTheWarden = true;
         brain.dangerRing = ring.transform;
+
+        // Nearly immovable. Not quite zero, because a hit that produces no reaction at
+        // all reads as a hit that did not land - the small remaining flinch is feedback
+        // rather than displacement, and at a tenth it moves the Warden about nine
+        // centimetres per arrow instead of nearly a metre.
+        brain.knockbackTaken = 0.1f;
 
         // The Warden has no weapon, so the whole slam is carried by the body. It rears
         // further back than the Grunt and drives further forward, because a four metre
@@ -1870,6 +1888,7 @@ public static class ValleyBuilder
 
         EnemyBrain brain = spitter.GetComponent<EnemyBrain>();
         brain.displayName = "Spitter";
+        brain.soundVoice = "Spitter";
         brain.attackShape = EnemyBrain.AttackShapeRanged;
         brain.detectionRadius = 20f;
         brain.loseInterestRadius = 30f;

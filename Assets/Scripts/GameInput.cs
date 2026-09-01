@@ -154,6 +154,22 @@ public static class GameInput
         return mouse.delta.ReadValue().y * MousePixelsToUsefulUnits;
     }
 
+    // Swapping between looking over the player's shoulder and looking out of their eyes.
+    //
+    // V, because every key a hand rests on during a fight was already taken and this one
+    // is not something anybody presses in a hurry. It is deliberately NOT on the mouse
+    // wheel: the wheel already swaps weapons, and a player scrolling for the bow should
+    // not find the whole camera has changed underneath them.
+    public static bool ViewToggleWasPressed()
+    {
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard == null)
+        {
+            return false;
+        }
+        return keyboard.vKey.wasPressedThisFrame;
+    }
+
     // ------------------------------------------------------------------------
     // Fighting
     // ------------------------------------------------------------------------

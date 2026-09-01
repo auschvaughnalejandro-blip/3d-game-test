@@ -76,6 +76,42 @@ Takes about a minute and catches real errors.
   call**. A raycast right after the rebuild falls through the new geometry. Call
   `Physics.SyncTransforms()` first, or probe in a separate command.
 
+**Camera**
+
+- `OrbitCamera` runs two views off one yaw and pitch: over the shoulder, and first person
+  in the player's head. **V** toggles. First person uses its own pitch limits (±85° rather
+  than −20/+65) and skips the wall-collision raycast, which in that view would only ever
+  find the ground underfoot.
+- First person hides the **head Renderer only** (the hair is parented to the head and goes
+  with it), so the arms and the weapon in hand stay on screen. It disables the `Renderer`,
+  never the `GameObject` — `ProceduralAnimator` found that Transform by name once at Start
+  and poses it every frame. `OrbitCamera` is the only place that writes `Renderer.enabled`
+  on a body part; nothing else in `Assets/Scripts` touches it, and it must stay that way or
+  the head comes back on halfway through a fight.
+- While first person is on, `PlayerMovement` snaps the body to the camera yaw instead of
+  slerping it towards the direction of travel. Easing it there instead makes the weapon lag
+  behind the mouse, and the melee arc is centred on `transform.forward`, so a lagging body
+  also swings at where the player was looking a moment ago.
+- `EndingSequence` forces third person before its pull-back shot. That shot animates
+  `distanceBehindTarget`, which first person does not read at all.
+- **The bow needed two fixes to be visible from inside the head, and both are geometry, not
+  taste.** The arm is 0.58 m of reach on a shoulder 0.57 m above the player transform and
+  the eye is at 0.75 m, so the third-person bow angle of 76° put the bow hand **43° below
+  the middle of the screen** — a 60° camera only sees 30° down, so bow, string and arrow
+  all sat just under the bottom edge. `bowArmForwardFromTheEyeDegrees` (108°) is used
+  instead whenever `PlayerAnimator` reports first person; it brings the hand to 7° below
+  centre, which is also the honest pose. First person also drops the near clip to 0.08 —
+  at the default 0.3 the hand clears it by 15 cm and the drawn arrow vanishes into it.
+- Weapons are parented into the hand with a **fixed local rotation**, so they rotate with
+  the arm — and the bow-draw pose swings the forearm ~66° forward, which laid the bow
+  nearly flat. `NockedArrow.StandTheBowUpAsItIsRaised` slerps the stave back upright across
+  `PlayerAnimator.BowReadyAmount()`. Build the rotation the way every weapon here is built,
+  `LookRotation(dir, up) * Euler(90,0,0)` putting the model's own **+Y** onto `dir`; check
+  any change against the rest pose, where arm-down plus a horizontal shot must come out as
+  the same straight-up the hand already holds the bow in. Do **not** derive weapon
+  orientation from the hand's axes — `PutTheWeaponInTheHand` records that this was tried
+  twice and was wrong twice.
+
 **Rendering / lighting**
 
 - The `OneValley/ProceduralRock` shader barely responds to ambient or point lights — it is

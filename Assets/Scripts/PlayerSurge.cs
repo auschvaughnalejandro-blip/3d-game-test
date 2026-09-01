@@ -206,7 +206,9 @@ public class PlayerSurge : MonoBehaviour
         // turning a reward for a streak into a permanent state.
         currentPoints = 0f;
 
-        GameSound.Play("PortalOpen", 0.6f);
+        // Its own sound at last. The surge is the best thing that happens to the player
+        // in a fight and it had been announcing itself with the noise a door makes.
+        GameSound.Play("SurgeActivate", 0.75f);
     }
 
     // ------------------------------------------------------------------------

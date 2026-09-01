@@ -107,6 +107,8 @@ public class GameProgress : MonoBehaviour
 
         FindThePlayer();
 
+        PutTheWorldBackToTheStart();
+
         if (playerStats != null)
         {
             playerStats.maximumHealth = 100f;
@@ -116,6 +118,11 @@ public class GameProgress : MonoBehaviour
             playerStats.attackDamage = 20f;
             playerStats.isDead = false;
         }
+
+        // isDead is set straight back to false here rather than being left for the next
+        // frame, so PlayerAilments never sees the death it would otherwise clear itself
+        // on. A new run has to start clean whatever killed the last one.
+        PlayerAilments.ClearEverythingNow();
 
         if (GameDirector.instance != null)
         {
@@ -147,6 +154,13 @@ public class GameProgress : MonoBehaviour
             return;
         }
 
+        // The same clean slate a new run gets. A checkpoint puts the player back at the
+        // start of a round, and the round it puts them back into has to be as empty as
+        // the round they first walked into - not still holding the enemies that killed
+        // them, which is what happened before and made every retry harder than the
+        // attempt that lost.
+        PutTheWorldBackToTheStart();
+
         // What the player earned comes back first, whatever act they were in.
         if (playerStats != null)
         {
@@ -157,6 +171,9 @@ public class GameProgress : MonoBehaviour
             playerStats.attackDamage = save.attackDamage;
             playerStats.isDead = false;
         }
+
+        // Same reasoning as BeginANewRun. A checkpoint is a moment before the damage.
+        PlayerAilments.ClearEverythingNow();
 
         if (GameDirector.instance != null)
         {
@@ -276,6 +293,143 @@ public class GameProgress : MonoBehaviour
     }
 
     // ------------------------------------------------------------------------
+    // Putting the world back
+    // ------------------------------------------------------------------------
+
+    // Everything that has to be undone before a run can begin, whether it is a brand new
+    // one or a checkpoint being loaded.
+    //
+    // The game never reloads the scene - the title screen is drawn straight over the
+    // living world, which is most of why it reads as a game rather than a dialog box -
+    // and the price of that is that NOTHING resets itself between runs. Every one-way
+    // latch, every open portal, every enemy still walking about and every line still
+    // queued to be spoken is exactly where the last run left it. Restoring the player's
+    // stats and standing them back in the dungeon, which is all this used to do,
+    // therefore produced a run that looked new and was not: the round counter carried on
+    // from where the last one died, the valley still held that round's enemies, and the
+    // door out of the dungeon had already carried somebody once and quietly refused to do
+    // it a second time.
+    //
+    // Anything that survives a run and is not put back here is a bug waiting to be
+    // reported as "the game froze", because that is exactly what it looks like from the
+    // outside: no error, no log line, just a player standing in a portal that will never
+    // take them anywhere.
+    private void PutTheWorldBackToTheStart()
+    {
+        // Whatever was being said, and whatever was queued behind it. A line left over
+        // from the last run takes the controls away the moment play resumes, because
+        // PlayerControl.IsBlocked is true for as long as a conversation is open.
+        if (DialogueBox.instance != null)
+        {
+            DialogueBox.instance.ClearEverything();
+        }
+
+        // The rounds: enemies, barriers, cover, the round number and the phase.
+        if (RoundDirector.instance != null)
+        {
+            RoundDirector.instance.ResetForANewRun();
+        }
+
+        // The story's own leavings: a beat waiting to fire, the north gate standing open,
+        // Orrin still out in the valley waiting to say goodbye.
+        if (StoryDirector.instance != null)
+        {
+            StoryDirector.instance.ResetForANewRun();
+        }
+
+        // Every portal in the scene, found by type rather than through the two references
+        // the builders happen to fill in. There are three, and a portal missed here is a
+        // portal the player walks into and stands in.
+        Portal[] everyPortal = Object.FindObjectsByType<Portal>(
+            FindObjectsInactive.Include, FindObjectsSortMode.None);
+        int portalIndex = 0;
+        while (portalIndex < everyPortal.Length)
+        {
+            everyPortal[portalIndex].ResetToClosed();
+            portalIndex = portalIndex + 1;
+        }
+
+        // Daylight back over the valley. The Vault's near-darkness is applied to the
+        // whole scene's lighting, so a run that reached the Vault hands the next one a
+        // valley lit like a cellar.
+        VaultAtmosphere atmosphere = Object.FindFirstObjectByType<VaultAtmosphere>();
+        if (atmosphere != null)
+        {
+            atmosphere.ReturnToTheValley();
+        }
+
+        // The reward goes back in the Warden's chest. ResumeFrom puts it into the hand
+        // again afterwards if the save says it had been won, so the order matters here.
+        if (playerWeapons != null)
+        {
+            playerWeapons.RelockTheWardensEdge();
+        }
+
+        if (playerObject != null)
+        {
+            PlayerSurge surge = playerObject.GetComponent<PlayerSurge>();
+            if (surge != null)
+            {
+                surge.ClearEverything();
+            }
+        }
+
+        CoachLines coaching = Object.FindFirstObjectByType<CoachLines>();
+        if (coaching != null)
+        {
+            coaching.ResetForANewRun();
+        }
+
+        SweepUpWhatTheLastRunDropped();
+    }
+
+    // The loose objects that are made at runtime and belong to nobody: shards lying on
+    // the ground, the Warden's eye if it was never picked up, arrows stuck in the
+    // scenery, and the burnt patches the Warden leaves. None of them are in the scene to
+    // begin with, so leaving them about is a new run starting in a used valley.
+    private void SweepUpWhatTheLastRunDropped()
+    {
+        EssencePickup[] shards = Object.FindObjectsByType<EssencePickup>(
+            FindObjectsInactive.Include, FindObjectsSortMode.None);
+        int shardIndex = 0;
+        while (shardIndex < shards.Length)
+        {
+            Destroy(shards[shardIndex].gameObject);
+            shardIndex = shardIndex + 1;
+        }
+
+        WardenGem[] gems = Object.FindObjectsByType<WardenGem>(
+            FindObjectsInactive.Include, FindObjectsSortMode.None);
+        int gemIndex = 0;
+        while (gemIndex < gems.Length)
+        {
+            Destroy(gems[gemIndex].gameObject);
+            gemIndex = gemIndex + 1;
+        }
+        // The name of the weapon is written across the screen from a static counter, so
+        // it outlives the gem that set it running.
+        WardenGem.SecondsOfNameLeft = 0f;
+
+        Arrow[] arrows = Object.FindObjectsByType<Arrow>(
+            FindObjectsInactive.Include, FindObjectsSortMode.None);
+        int arrowIndex = 0;
+        while (arrowIndex < arrows.Length)
+        {
+            Destroy(arrows[arrowIndex].gameObject);
+            arrowIndex = arrowIndex + 1;
+        }
+
+        ScorchedGround[] burns = Object.FindObjectsByType<ScorchedGround>(
+            FindObjectsInactive.Include, FindObjectsSortMode.None);
+        int burnIndex = 0;
+        while (burnIndex < burns.Length)
+        {
+            Destroy(burns[burnIndex].gameObject);
+            burnIndex = burnIndex + 1;
+        }
+    }
+
+    // ------------------------------------------------------------------------
     // Moving the player about
     // ------------------------------------------------------------------------
 
@@ -287,6 +441,16 @@ public class GameProgress : MonoBehaviour
     private void PutThePlayerInTheVault()
     {
         MoveThePlayerTo(ValleyBuilder.BossArenaOrigin + new Vector3(0f, 2.5f, -18f));
+
+        // Walking through the portal turns the world dark on the way in. Being PUT here
+        // by a loaded save skips that, and the room is then lit by valley daylight -
+        // which washes the braziers and the crystals out to flat pale shapes and reads as
+        // the Vault having failed to build rather than as the lighting being wrong.
+        VaultAtmosphere atmosphere = Object.FindFirstObjectByType<VaultAtmosphere>();
+        if (atmosphere != null)
+        {
+            atmosphere.EnterTheVault();
+        }
     }
 
     private void MoveThePlayerTo(Vector3 where)

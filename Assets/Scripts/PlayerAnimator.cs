@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 // Drives the player's limbs from the player's own state.
 //
@@ -40,6 +40,22 @@ public class PlayerAnimator : MonoBehaviour
     // stunlock. It is interruptible regardless - see below.
     public float hitReactionSeconds = 0.25f;
 
+    // How long the bow takes to come up into an aiming stance, and to come down again.
+    //
+    // Like the swap, this has no gameplay duration to borrow: the draw begins on the
+    // frame the button goes down and there is no wind-up in the rules to match. But
+    // switching straight to a full aiming stance pops, so the pose fades over this
+    // instead. Kept well under the shortest useful draw, or the bow would still be on
+    // its way up when the string was already halfway back.
+    public float bowRaiseSeconds = 0.16f;
+
+    // The loose. This one IS borrowed - it is the bow's own recovery, so the hand is
+    // done snapping back at exactly the moment the player may draw again, and a surge
+    // shortens both together with nothing to keep in sync.
+    //
+    // The fallback is only for a bow with no recovery at all, which no weapon has.
+    public float looseTakesSecondsIfTheBowHasNoRecovery = 0.18f;
+
     private ProceduralAnimator limbs;
     private PlayerMovement movement;
     private PlayerCombat combat;
@@ -49,6 +65,11 @@ public class PlayerAnimator : MonoBehaviour
     private CharacterStats ownStats;
     private CharacterController bodyController;
 
+    // Asked once a frame which view the game is being watched in, purely so the bow can
+    // be raised to the eye line when the answer is "from inside this body". Nothing else
+    // in the animation cares where the camera is.
+    private OrbitCamera theCamera;
+
     private float sprintAmount = 0f;
 
     // Swings, swaps and hits are events rather than states, so each is spotted by
@@ -57,6 +78,7 @@ public class PlayerAnimator : MonoBehaviour
     private float swingSecondsElapsed = -1f;
     private float swingTakesSeconds = 0.45f;
     private bool swingWasHeavy = false;
+    private SwingShape swingShape = SwingShape.Stab;
 
     private int swapsSeen = -1;
     private float swapSecondsElapsed = -1f;
@@ -66,6 +88,14 @@ public class PlayerAnimator : MonoBehaviour
     private float hitSideSign = 1f;
 
     private bool wasAirborneLastFrame = false;
+
+    // The bow. The raise is a blended state, the loose is an event spotted by watching
+    // the count of arrows PlayerCombat has actually loosed.
+    private float bowReadyAmount = 0f;
+    private int arrowsSeen = -1;
+    private float looseSecondsElapsed = -1f;
+    private float looseTakesSeconds = 0.18f;
+    private float looseDrawnTo = 0f;
 
     void Start()
     {
@@ -77,6 +107,11 @@ public class PlayerAnimator : MonoBehaviour
         ownStats = GetComponent<CharacterStats>();
         bodyController = GetComponent<CharacterController>();
 
+        if (Camera.main != null)
+        {
+            theCamera = Camera.main.GetComponent<OrbitCamera>();
+        }
+
         FindTheLimbs();
 
         // Start the counters where they already are, or the player would swing, swap and
@@ -84,6 +119,10 @@ public class PlayerAnimator : MonoBehaviour
         if (combat != null)
         {
             swingsSeen = combat.SwingsMade();
+        }
+        if (combat != null)
+        {
+            arrowsSeen = combat.ArrowsLoosed();
         }
         if (weapons != null)
         {
@@ -128,6 +167,7 @@ public class PlayerAnimator : MonoBehaviour
         DriveTheJump();
         DriveTheDodge();
         DriveTheSwing();
+        DriveTheBow();
         DriveTheSurge();
         DriveTheDrink();
         DriveTheSwap();
@@ -243,6 +283,7 @@ public class PlayerAnimator : MonoBehaviour
             swingSecondsElapsed = 0f;
             swingWasHeavy = combat.LastSwingWasHeavy();
             swingTakesSeconds = combat.LastSwingTookSeconds();
+            swingShape = combat.LastSwingShape();
 
             if (swingTakesSeconds <= 0f)
             {
@@ -252,7 +293,7 @@ public class PlayerAnimator : MonoBehaviour
 
         if (swingSecondsElapsed < 0f)
         {
-            limbs.ShowPlayerSwing(-1f, false);
+            limbs.ShowPlayerSwing(-1f, false, swingShape);
             return;
         }
 
@@ -261,11 +302,103 @@ public class PlayerAnimator : MonoBehaviour
         if (swingSecondsElapsed >= swingTakesSeconds)
         {
             swingSecondsElapsed = -1f;
-            limbs.ShowPlayerSwing(-1f, false);
+            limbs.ShowPlayerSwing(-1f, false, swingShape);
             return;
         }
 
-        limbs.ShowPlayerSwing(swingSecondsElapsed / swingTakesSeconds, swingWasHeavy);
+        limbs.ShowPlayerSwing(swingSecondsElapsed / swingTakesSeconds, swingWasHeavy, swingShape);
+    }
+
+    // The bow, which is two things at once and has to be driven as two things.
+    //
+    // Raising it is a STATE - it is up for as long as the button is held - so it blends,
+    // the way sprinting does. Pulling the string is a POSITION on that state, read
+    // straight off PlayerCombat rather than timed here, so that everything gameplay
+    // already does to the draw shows up in the pose for free: it stalls during the
+    // recovery of the last shot because DrawFraction stays at nought through it, it
+    // stops climbing at maximum because DrawFraction clamps, and a surge pulls it back
+    // faster because the surge is already inside the fraction.
+    //
+    // That last point is the reason none of the draw timing is restated here. A copy of
+    // secondsToFullDraw in this file would look right and then drift the first time
+    // anybody retuned the bow, and the arms would quietly finish drawing before or after
+    // the shot they belong to.
+    // How far the bow has been brought up into an aiming stance, nought to one.
+    //
+    // Read by NockedArrow, which stands the bow prop upright across exactly this blend.
+    // Exposed rather than recomputed there because this is the only copy of it: a second
+    // one timed off the same raise seconds would look right and then drift the first time
+    // anybody changed how fast the bow comes up.
+    public float BowReadyAmount()
+    {
+        return bowReadyAmount;
+    }
+
+    private void DriveTheBow()
+    {
+        if (combat == null)
+        {
+            return;
+        }
+
+        // The loose first, because a shot that has just gone means the bow should start
+        // coming down this frame rather than next.
+        int arrowsNow = combat.ArrowsLoosed();
+        if (arrowsNow != arrowsSeen)
+        {
+            arrowsSeen = arrowsNow;
+            looseSecondsElapsed = 0f;
+            looseDrawnTo = combat.LastShotDrawFraction();
+            looseTakesSeconds = combat.LastShotRecoverySeconds();
+
+            if (looseTakesSeconds <= 0f)
+            {
+                looseTakesSeconds = looseTakesSecondsIfTheBowHasNoRecovery;
+            }
+        }
+
+        if (looseSecondsElapsed < 0f)
+        {
+            limbs.ShowBowLoose(-1f, 0f);
+        }
+        else
+        {
+            looseSecondsElapsed = looseSecondsElapsed + Time.deltaTime;
+
+            if (looseSecondsElapsed >= looseTakesSeconds)
+            {
+                looseSecondsElapsed = -1f;
+                limbs.ShowBowLoose(-1f, 0f);
+            }
+            else
+            {
+                limbs.ShowBowLoose(looseSecondsElapsed / looseTakesSeconds, looseDrawnTo);
+            }
+        }
+
+        // And the stance. Up while the string is held, down otherwise, blended both ways.
+        float wanted = 0f;
+        if (combat.IsDrawingABow() == true)
+        {
+            wanted = 1f;
+        }
+
+        if (bowRaiseSeconds > 0f)
+        {
+            float step = Time.deltaTime / bowRaiseSeconds;
+            bowReadyAmount = Mathf.MoveTowards(bowReadyAmount, wanted, step);
+        }
+        else
+        {
+            bowReadyAmount = wanted;
+        }
+
+        // Which pose the arms hold the bow in. Set every frame beside the draw itself, so
+        // the two can never disagree about what the bow is doing.
+        bool sightedFromTheEye = theCamera != null && theCamera.IsFirstPerson() == true;
+        limbs.ShowBowSightedFromTheEye(sightedFromTheEye);
+
+        limbs.ShowBowDraw(bowReadyAmount, combat.DrawFraction());
     }
 
     private void DriveTheSurge()

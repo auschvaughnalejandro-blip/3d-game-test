@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 // The referee. Owns the things that are true about the run as a whole rather than about
 // any one character: how much essence has been collected, what happens when the player
@@ -53,10 +53,36 @@ public class GameDirector : MonoBehaviour
                 playerSurge = playerObject.AddComponent<PlayerSurge>();
             }
 
+            // Same reasoning for the thing that holds the bleeding, the stagger and the
+            // weakness. Without it every enemy hit quietly goes back to being a plain
+            // subtraction, which is a feature vanishing rather than an error.
+            if (playerObject.GetComponent<PlayerAilments>() == null)
+            {
+                playerObject.AddComponent<PlayerAilments>();
+            }
+
             // Same reasoning for the thing that drives the player's limbs.
             if (playerObject.GetComponent<PlayerAnimator>() == null)
             {
                 playerObject.AddComponent<PlayerAnimator>();
+            }
+
+            // And for the shaft that sits on the drawn bow. Same reasoning again, and the
+            // same silent failure if it is left out: the player would draw a bow with
+            // nothing on it and the draw would read as broken rather than as unarmed.
+            if (playerObject.GetComponent<NockedArrow>() == null)
+            {
+                playerObject.AddComponent<NockedArrow>();
+            }
+
+            // And for the quiver. Same reasoning again, and the failure is silent in the
+            // most misleading direction: PlayerCombat treats a missing quiver as
+            // unlimited arrows, so leaving this out does not break anything visibly - the
+            // bow simply goes back to being free, and the limit reads as never having
+            // been implemented.
+            if (playerObject.GetComponent<PlayerQuiver>() == null)
+            {
+                playerObject.AddComponent<PlayerQuiver>();
             }
 
             // The component can be added here. The MODEL cannot.
@@ -126,7 +152,7 @@ public class GameDirector : MonoBehaviour
     {
         // Every death in the game already reports here, so this is the only place the
         // kill streak has to be told about. No enemy needs to know the meter exists.
-        if (playerSurge != null)
+        if (playerSurge != null && whoDied.killingThisBuildsNoStreak == false)
         {
             playerSurge.AwardPointsForKilling(whoDied.displayName);
         }
